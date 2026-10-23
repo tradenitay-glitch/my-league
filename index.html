@@ -338,13 +338,25 @@ tr.mine td.sticky-col{background:color-mix(in srgb,var(--accent) 10%,var(--card)
 .share-v{min-width:64px;text-align:end}
 .share-v small{color:var(--dim)}
 
+/* לוגו */
+.ball-wrap{display:contents}
+img.ball{width:34px;height:34px;object-fit:contain;border-radius:9px;flex:none}
+.tb .dot.logo{background:var(--card2);padding:2px;box-shadow:none;border:1px solid var(--line)}
+.tb .dot.logo img{width:100%;height:100%;object-fit:contain;border-radius:inherit;display:block}
+.logo-pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.logo-prev{width:42px;height:42px;border-radius:11px;background:var(--card2);border:1px dashed var(--line);display:grid;place-items:center;overflow:hidden;flex:none}
+.logo-prev:empty::after{content:"—";color:var(--dim)}
+.logo-prev.lg{width:72px;height:72px;font-size:32px;border-radius:16px}
+.logo-prev img{width:100%;height:100%;object-fit:contain}
+.hero-logo{position:absolute;top:16px;inset-inline-end:16px;width:64px;height:64px;object-fit:contain;border-radius:14px;z-index:1}
+
 </style>
 </head>
 <body>
 <header class="top">
   <div class="wrap">
     <a class="brand" href="#/">
-      <svg class="ball" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="#ff7a1a"/><g fill="none" stroke="#1a0d02" stroke-width="3"><circle cx="32" cy="32" r="29"/><path d="M3 32h58M32 3v58M12 11c9 8 9 34 0 42M52 11c-9 8-9 34 0 42"/></g></svg>
+      <span id="brandIcon" class="ball-wrap"><svg class="ball" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="29" fill="#ff7a1a"/><g fill="none" stroke="#1a0d02" stroke-width="3"><circle cx="32" cy="32" r="29"/><path d="M3 32h58M32 3v58M12 11c9 8 9 34 0 42M52 11c-9 8-9 34 0 42"/></g></svg></span>
       <span style="min-width:0"><b id="leagueName">הליגה</b><small id="leagueSeason"></small></span>
     </a>
     <nav class="topnav" id="topnav"></nav>
@@ -626,9 +638,30 @@ function gameHighs(k, limit = 5, ids = null) {
 
 /* ================= רכיבי תצוגה ================= */
 function initials(t) { return esc((t.short || t.name || "?").slice(0, 3)); }
+/* לוגו: מקטינים כל תמונה ל-192 פיקסלים ושומרים אותה בתוך הנתונים */
+const okImg = (v) => typeof v === "string" && v.length < 400000 && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v);
+function readImage(file, size = 192) {
+  return new Promise((res, rej) => {
+    if (!file || !/^image\//.test(file.type || "")) return rej(new Error("type"));
+    const fr = new FileReader(); fr.onerror = () => rej(fr.error);
+    fr.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement("canvas"); c.width = c.height = size; const x = c.getContext("2d");
+        const sc = Math.min(size / (img.width || size), size / (img.height || size)), w = (img.width || size) * sc, h = (img.height || size) * sc;
+        x.imageSmoothingQuality = "high"; x.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+        let out = c.toDataURL("image/webp", 0.9); if (!out.startsWith("data:image/webp")) out = c.toDataURL("image/png");
+        res(out);
+      };
+      img.onerror = () => rej(new Error("img")); img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+const logoInput = (name = "logo") => `<label class="btn sm">🖼️ בחר תמונה<input type="file" accept="image/*" name="${name}" hidden data-preview></label>`;
 function badge(t, opts = {}) {
   if (!t) return `<span class="tb"><span class="dot" style="background:#555">?</span><span class="nm">קבוצה נמחקה</span></span>`;
-  const inner = `<span class="dot" style="background:${esc(t.color || "#ff7a1a")}">${initials(t)}</span>${opts.noName ? "" : `<span class="nm">${esc(t.name)}</span>`}`;
+  const inner = `${okImg(t.logo) ? `<span class="dot logo"><img src="${t.logo}" alt=""></span>` : `<span class="dot" style="background:${esc(t.color || "#ff7a1a")}">${initials(t)}</span>`}${opts.noName ? "" : `<span class="nm">${esc(t.name)}</span>`}`;
   return opts.link === false ? `<span class="tb ${opts.lg ? "lg" : ""}">${inner}</span>` : `<a class="tb ${opts.lg ? "lg" : ""}" href="#/team/${t.id}">${inner}</a>`;
 }
 function plink(p, cls = "") { return p ? `<a class="${cls}" href="#/player/${p.id}">${esc(p.name)}</a>` : "—"; }
@@ -821,6 +854,7 @@ function pageHome() {
   const leadersHtml = leaderCard(LEADER_CATS.find(c => c.k === "pts"), minG, 5);
   return `
   <section class="hero">
+    ${okImg(DB.league.logo) ? `<img class="hero-logo" src="${DB.league.logo}" alt="">` : ""}
     <h1>${esc(DB.league.name)}</h1><div class="muted">עונת ${esc(DB.league.season || "")}</div>
     <div class="kpis">
       <div class="kpi"><b>${DB.teams.length}</b><span>קבוצות</span></div>
@@ -1514,7 +1548,8 @@ function adminTeams() {
   return `<form class="card pad" data-form="addTeam"><h2 style="margin-bottom:10px">קבוצה חדשה</h2>
     <div class="fgrid"><label class="f">שם הקבוצה<input class="inp" name="name" required></label>
     <label class="f">קיצור (עד 3 אותיות)<input class="inp" name="short" maxlength="3"></label>
-    <label class="f">צבע<input class="inp" type="color" name="color" value="${["#ff7a1a","#2f7fe0","#13a868","#e23b4c","#8b5cf6","#eab308","#0ea5a4","#ec4899"][DB.teams.length % 8]}"></label></div>
+    <label class="f">צבע<input class="inp" type="color" name="color" value="${["#ff7a1a","#2f7fe0","#13a868","#e23b4c","#8b5cf6","#eab308","#0ea5a4","#ec4899"][DB.teams.length % 8]}"></label>
+    <div class="f"><span>לוגו (רשות)</span><div class="logo-pick"><span class="logo-prev"></span>${logoInput()}</div></div></div>
     <button class="btn pri" style="margin-top:12px">+ הוסף קבוצה</button></form>
   <div class="card sec">${DB.teams.map(t => `<div class="list-row">${badge(t, { link:false })}<span class="grow small muted">${roster(t.id).length} שחקנים · ${st[t.id] ? `${st[t.id].w}-${st[t.id].l}` : ""}</span>
     <button class="btn sm" data-act="editTeam" data-id="${t.id}">עריכה</button><button class="btn sm danger" data-act="delTeam" data-id="${t.id}">מחק</button></div>`).join("") || `<div class="empty">עוד אין קבוצות</div>`}</div>`;
@@ -1541,6 +1576,11 @@ function adminSettings() {
     <label class="f">מינימום משחקים למובילים<input class="inp" type="number" min="1" name="minGames" value="${esc(L.minGames ?? 1)}"></label>
     <label class="f">⭐ הקבוצה שלי<select class="inp" name="myTeamId">${DB.teams.length ? teamOptions(myTeamId()) : `<option value="">אין קבוצות</option>`}</select></label></div>
     <button class="btn pri" style="margin-top:12px">שמור</button></form>
+  <div class="card pad sec"><h2 style="margin-bottom:10px">לוגו הליגה</h2>
+    <div class="logo-pick"><span class="logo-prev lg">${okImg(DB.league.logo) ? `<img src="${DB.league.logo}" alt="">` : "🏀"}</span>
+      <label class="btn">🖼️ העלה לוגו<input type="file" accept="image/*" data-act="leagueLogo" hidden></label>
+      ${okImg(DB.league.logo) ? `<button class="btn danger" data-act="rmLeagueLogo">הסר</button>` : ""}</div>
+    <p class="small muted">הלוגו יופיע למעלה בכל דף ובדף הבית. את הלוגו של כל קבוצה מוסיפים בטאב "קבוצות" ← עריכה.</p></div>
   ${MODE === "local" ? `<form class="card pad sec" data-form="localPw"><h2 style="margin-bottom:10px">סיסמה (מצב מקומי)</h2><div class="toolbar"><input class="inp" name="pw" type="password" placeholder="סיסמה חדשה" required style="max-width:240px"><button class="btn">שנה סיסמה</button></div>
     <p class="small muted">באתר שעל Netlify הסיסמה נקבעת בהגדרות של Netlify (ADMIN_PASSWORD), ראה קובץ ההוראות.</p></form>` : ""}
   <div class="card pad sec"><h2 style="margin-bottom:10px">גיבוי והעברת נתונים</h2>
@@ -1557,6 +1597,8 @@ function normalize(d) {
   const e = EMPTY();
   d.league = Object.assign(e.league, d.league || {});
   for (const k of ["teams","players","games"]) if (!Array.isArray(d[k])) d[k] = [];
+  if (d.league.logo && !okImg(d.league.logo)) delete d.league.logo;
+  for (const t of d.teams) if (t.logo && !okImg(t.logo)) delete t.logo;
   for (const g of d.games) { g.box ||= {}; if (!Array.isArray(g.shots)) g.shots = []; g.status ||= (isN(g.homeScore) && isN(g.awayScore) ? "final" : "scheduled"); }
   return d;
 }
@@ -1722,10 +1764,15 @@ const ACT = {
     const t = team(el.dataset.id);
     const v = await modal(`<h2>עריכת קבוצה</h2><form><div class="fgrid"><label class="f">שם<input class="inp" name="name" value="${esc(t.name)}" required></label>
       <label class="f">קיצור<input class="inp" name="short" maxlength="3" value="${esc(t.short || "")}"></label><label class="f">צבע<input class="inp" type="color" name="color" value="${esc(t.color)}"></label></div>
+      <div class="f" style="margin-top:12px"><span>לוגו</span><div class="logo-pick"><span class="logo-prev">${okImg(t.logo) ? `<img src="${t.logo}" alt="">` : ""}</span>${logoInput()}
+        ${okImg(t.logo) ? `<label class="small" style="display:flex;gap:6px;align-items:center"><input type="checkbox" name="removeLogo"> הסר לוגו</label>` : ""}</div></div>
       <div class="row-actions" style="margin-top:14px"><button class="btn pri">שמור</button><button type="button" class="btn" data-close="">ביטול</button></div></form>`,
       (m, close) => m.querySelector("form").addEventListener("submit", e => { e.preventDefault(); close(Object.fromEntries(new FormData(e.target))); }));
     if (!v || typeof v !== "object") return;
-    Object.assign(t, { name: v.name.trim(), short: v.short.trim() || v.name.trim().slice(0, 2), color: v.color }); commit();
+    Object.assign(t, { name: v.name.trim(), short: v.short.trim() || v.name.trim().slice(0, 2), color: v.color });
+    if (v.removeLogo) delete t.logo;
+    else if (v.logo && v.logo.size) { try { t.logo = await readImage(v.logo); } catch { toast("לא הצלחתי לקרוא את התמונה"); } }
+    commit();
   },
   async delTeam(el) {
     const id = el.dataset.id, ng = DB.games.filter(g => g.homeId === id || g.awayId === id).length;
@@ -1754,6 +1801,7 @@ const ACT = {
     if (!await confirmBox(`למחוק את ${p.name}?`, "גם הנתונים שלו מכל המשחקים יימחקו.", "מחק", true)) return;
     DB.players = DB.players.filter(x => x.id !== p.id); for (const g of DB.games) { delete g.box?.[p.id]; if (g.shots) g.shots = g.shots.filter(s => s.pid !== p.id); } commit();
   },
+  rmLeagueLogo() { delete DB.league.logo; commit(); toast("הלוגו הוסר"); },
   export() {
     const blob = new Blob([JSON.stringify(DB, null, 2)], { type:"application/json" });
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `league-backup-${new Date().toISOString().slice(0, 10)}.json`; a.click();
@@ -1769,9 +1817,11 @@ function rerenderBox() { const g = curGame(), el = $("#boxArea"); if (g && el) e
 
 const FORMS = {
   login(f) { login(f.pw.value); },
-  addTeam(f) {
+  async addTeam(f) {
     const name = f.name.value.trim(); if (!name) return;
-    DB.teams.push({ id: uid(), name, short: f.short.value.trim() || name.replace(/^(הפועל|מכבי|בני|עירוני|אליצור|הכח|בית"ר)\s+/, "").slice(0, 2), color: f.color.value });
+    const file = f.logo?.files?.[0]; let logo;
+    if (file) { try { logo = await readImage(file); } catch { toast("לא הצלחתי לקרוא את התמונה"); } }
+    DB.teams.push({ id: uid(), name, short: f.short.value.trim() || name.replace(/^(הפועל|מכבי|בני|עירוני|אליצור|הכח|בית"ר)\s+/, "").slice(0, 2), color: f.color.value, ...(logo ? { logo } : {}) });
     commit(); toast("הקבוצה נוספה");
   },
   bulkPlayers(f) {
@@ -1820,6 +1870,16 @@ document.addEventListener("change", (e) => {
   if (el.dataset.played) {
     const g = curGame(); if (el.checked) g.box[el.dataset.played] ||= {}; else delete g.box[el.dataset.played];
     commit(false); rerenderBox(); return;
+  }
+  if (el.dataset.act === "leagueLogo") {
+    const file = el.files[0]; if (!file) return;
+    readImage(file, 256).then(d => { DB.league.logo = d; commit(); toast("הלוגו עודכן ✓"); }).catch(() => toast("לא הצלחתי לקרוא את התמונה"));
+    return;
+  }
+  if (el.matches("input[type=file][data-preview]")) {
+    const prev = el.closest(".logo-pick")?.querySelector(".logo-prev"); const file = el.files[0];
+    if (prev && file) readImage(file, 96).then(d => { prev.innerHTML = `<img src="${d}" alt="">`; }).catch(() => toast("זה לא קובץ תמונה"));
+    return;
   }
   if (el.dataset.act === "import") {
     const file = el.files[0]; if (!file) return;
@@ -1884,6 +1944,8 @@ function render(keepFocus) {
   const navPage = ["game"].includes(page) ? "games" : ["team"].includes(page) ? "teams" : ["player"].includes(page) ? "players" : page;
   $("#topnav").innerHTML = NAV.map(([k, l]) => `<a href="#/${k}" class="${navPage === k ? "on" : ""}">${l}</a>`).join("");
   $("#bnav").innerHTML = NAV.filter(n => n[0] !== "teams").map(([k, l, ic]) => `<a href="#/${k}" class="${navPage === k || (k === "standings" && navPage === "teams") ? "on" : ""}">${ic}<span>${l}</span></a>`).join("");
+  const bi = $("#brandIcon"); if (bi) bi.innerHTML = okImg(DB.league.logo) ? `<img class="ball" src="${DB.league.logo}" alt="">` : DEFAULT_BALL;
+  const fav = document.querySelector('link[rel="icon"]'); if (fav) { if (!render.favDefault) render.favDefault = fav.getAttribute("href"); fav.setAttribute("href", okImg(DB.league.logo) ? DB.league.logo : render.favDefault); }
   $("#leagueName").textContent = DB.league.name; $("#leagueSeason").textContent = DB.league.season ? "עונת " + DB.league.season : "";
   document.title = DB.league.name;
   const ab = $("#adminBtn"); ab.innerHTML = I.lock; ab.classList.toggle("admin-on", !!ADMIN_PW);
@@ -1906,6 +1968,7 @@ document.addEventListener("click", (e) => {
   e.preventDefault(); go(a.getAttribute("href"));
 });
 
+const DEFAULT_BALL = $("#brandIcon")?.innerHTML || "";
 /* ערכת צבעים */
 function applyTheme() {
   const t = LS.get("league_theme") || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
