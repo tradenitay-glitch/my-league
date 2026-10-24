@@ -453,7 +453,10 @@ let ADMIN_PW = SS.get("league_pw") || "";
 let saveTimer = null, saving = false, dirty = false;
 const sortState = {};
 let ui = {}; try { ui = JSON.parse(LS.get("league_ui") || "{}") || {}; } catch {}
-ui.pview ??= "pts"; ui.boxSide ??= "home"; ui.boxMode ??= "grid"; ui.cols ??= ["pts","q1","q2","q3","q4","fg3m","fg2m","ftm","fta","pf","pm"];
+ui.pview ??= "pts"; ui.boxSide ??= "home"; ui.boxMode ??= "grid"; ui.cols ??= ["pts","fg3m","fg2m","ftm","fta","pm"];
+ui.cols = ui.cols.filter(k => k !== "pf");
+if (["q1","q2","q3","q4"].every(q => ui.cols.includes(q)) && ui.cols.includes("pm")) ui.cols = ui.cols.filter(k => !["q1","q2","q3","q4"].includes(k));
+ui.tapQ = "";
 const saveUi = () => LS.set("league_ui", JSON.stringify(ui));
 let tapSel = null, pendingShot = null; const tapLog = [];
 
@@ -515,7 +518,7 @@ const STATS = [
   { k:"oreb", s:"ריב' הת'", l:"ריבאונד התקפה" }, { k:"dreb", s:"ריב' הג'", l:"ריבאונד הגנה" },
   { k:"reb",  s:"ריב'", l:"ריבאונדים" },
   { k:"ast",  s:"אס'",  l:"אסיסטים" }, { k:"stl", s:"חט'", l:"חטיפות" }, { k:"blk", s:"חס'", l:"חסימות" },
-  { k:"tov",  s:"איב'", l:"איבודים" }, { k:"pf", s:"עב'", l:"עבירות" },
+  { k:"tov",  s:"איב'", l:"איבודים" },
   { k:"q1", s:"רבע 1", l:"נקודות ברבע 1" }, { k:"q2", s:"רבע 2", l:"נקודות ברבע 2" },
   { k:"q3", s:"רבע 3", l:"נקודות ברבע 3" }, { k:"q4", s:"רבע 4", l:"נקודות ברבע 4" },
   { k:"pm", s:"+/-", l:"פלוס/מינוס – הפרש הנקודות כשהשחקן היה על המגרש" },
@@ -631,13 +634,16 @@ function playerAgg(pid, lastN) {
 }
 const allAggs = () => DB.players.map(p => ({ p, a: playerAgg(p.id) }));
 
-// סכומי קבוצה במשחק מתוך הבוקס. strict = רק אם לכל שחקן עם נתונים במשחק יש את הנתון (אחרת "לא ידוע")
+// סכומי קבוצה במשחק מתוך הבוקס.
+// strict = לסטטיסטיקה של הקבוצה: נתון נחשב רק אם הוזן ל-75% לפחות מהשחקנים עם נתונים במשחק
+// (אחרת זה רק של שחקן אחד או שניים – זה נספר להם אישית, אבל לא לקבוצה)
+const TEAM_MIN_SHARE = 0.75;
 function teamTotals(g, tid, strict = false) {
   const rows = roster(tid).map(p => g.box?.[p.id]).filter(r => r && Object.keys(r).length);
   const out = {};
   for (const s of STATS) {
-    const v = rows.map(r => val(r, s.k));
-    out[s.k] = !v.some(isN) || (strict && !v.every(isN)) ? undefined : sum(v.filter(isN));
+    const v = rows.map(r => val(r, s.k)), have = v.filter(isN);
+    out[s.k] = !have.length || (strict && have.length / rows.length < TEAM_MIN_SHARE) ? undefined : sum(have);
   }
   return out;
 }
@@ -678,7 +684,7 @@ const LEADER_CATS = [
   { k:"fgp", l:"אחוז קליעה מהשדה", pct:true }, { k:"fg2p", l:"אחוז מ-2", pct:true }, { k:"fg3p", l:"אחוז מ-3", pct:true },
   { k:"ftp", l:"אחוז עונשין", pct:true }, { k:"ts", l:"TS% – קליעה אמיתי", pct:true }, { k:"pps", l:"נקודות לזריקה", dec:2 },
   { k:"fg3mTot", l:"קליעות 3 (סה\"כ)", tot:true }, { k:"ftmTot", l:"קליעות עונשין (סה\"כ)", tot:true },
-  { k:"dd", l:"דאבל-דאבל", tot:true }, { k:"min", l:"דקות למשחק" }, { k:"pf", l:"עבירות למשחק" },
+  { k:"dd", l:"דאבל-דאבל", tot:true }, { k:"min", l:"דקות למשחק" },
   { k:"pm", l:"פלוס/מינוס למשחק", signed:true },
 ];
 function leaders(cat, minG, list = allAggs(), limit = 5) {
@@ -949,19 +955,64 @@ function quarterAvgs(rows) {
 // לקבוצה: סכום השחקנים בכל רבע, ממוצע על המשחקים
 const hasQ = (r) => QS.some(q => isN(r[q]));
 const quartersComplete = (rs) => rs.some(hasQ) && rs.every(r => hasQ(r) || !(val(r, "pts") > 0));
+/* נתוני קבוצה במשחק (לא לפי שחקן): רבעים, שלשות, קליעות 2, עונשין */
+const TS_FIELDS = [["q1","רבע 1"],["q2","רבע 2"],["q3","רבע 3"],["q4","רבע 4"],["ot","הארכה"],["fg3m","שלשות"],["fg2m","קליעות 2"],["ftm","עונשין ✓"],["fta","ניס' ע'"]];
+const tsGet = (g, tid, k) => { const v = g.teamStats?.[tid]?.[k]; return isN(v) ? v : undefined; };
+// נקודות לפי רבע של קבוצה במשחק: קודם מה שהוזן לקבוצה, אחרת סכום השחקנים (אם מלא)
+function gameQuarters(g, tid) {
+  if (QS.some(q => isN(tsGet(g, tid, q)))) return { qs: QS.map(q => tsGet(g, tid, q) ?? 0), ot: tsGet(g, tid, "ot") || 0 };
+  const rs = roster(tid).map(p => g.box?.[p.id]).filter(Boolean);
+  if (quartersComplete(rs)) return { qs: QS.map(q => sum(rs.map(r => r[q] || 0))), ot: 0 };
+  return null;
+}
+// נתון קבוצתי במשחק: מה שהוזן לקבוצה, אחרת סכום השחקנים (רק אם הוזן לכולם)
+function teamGameStats(g, tid) {
+  const t = teamTotals(g, tid, true);
+  for (const k of ["fg3m","fg2m","ftm","fta"]) { const v = tsGet(g, tid, k); if (isN(v)) t[k] = v; }
+  return t;
+}
 function teamQuarterAvgs(tid) {
-  const ids = new Set(roster(tid).map(p => p.id));
-  const games = DB.games.filter(g => quartersComplete(Object.entries(g.box || {}).filter(([pid]) => ids.has(pid)).map(([, r]) => r)));
-  return { n: games.length, avgs: QS.map((q, i) => ({ l: `רבע ${i + 1}`, v: games.length ? sum(games.map(g => sum(Object.entries(g.box).filter(([pid]) => ids.has(pid)).map(([, r]) => r[q] || 0)))) / games.length : undefined })) };
+  const gs = DB.games.filter(g => isFinal(g) && (g.homeId === tid || g.awayId === tid));
+  const mine = [], opp = [];
+  for (const g of gs) { const a = gameQuarters(g, tid); if (a) mine.push(a); const b = gameQuarters(g, g.homeId === tid ? g.awayId : g.homeId); if (b) opp.push(b); }
+  const av = (arr) => QS.map((q, i) => ({ l: `רבע ${i + 1}`, v: arr.length ? sum(arr.map(x => x.qs[i])) / arr.length : undefined }));
+  return { n: mine.length, avgs: av(mine), on: opp.length, opp: av(opp) };
+}
+function teamQuarterHtml(tid) {
+  const qa = teamQuarterAvgs(tid); if (!qa.n) return "";
+  const best = qa.avgs.reduce((b, x, i) => (x.v > (qa.avgs[b].v ?? -1) ? i : b), 0);
+  return `${quarterBars(qa.avgs)}
+    <div class="tbl-wrap" style="margin-top:12px"><table><thead><tr><th class="l">ממוצע למשחק</th>${QS.map((q, i) => `<th>רבע ${i + 1}</th>`).join("")}</tr></thead><tbody>
+      <tr><td class="l">קלענו</td>${qa.avgs.map(x => `<td><b>${f1(x.v)}</b></td>`).join("")}</tr>
+      ${qa.on ? `<tr><td class="l">ספגנו</td>${qa.opp.map(x => `<td>${f1(x.v)}</td>`).join("")}</tr>
+      <tr><td class="l">הפרש</td>${qa.avgs.map((x, i) => { const d = x.v - qa.opp[i].v; return `<td class="${d > 0 ? "pos" : d < 0 ? "neg" : ""}">${isN(d) ? sg(d) : "—"}</td>`; }).join("")}</tr>` : ""}
+    </tbody></table></div>
+    <p class="small dim" style="margin:6px 0 0">הרבע הכי חזק: רבע ${best + 1}. מ-${qa.n} משחקים עם נקודות לפי רבע.</p>`;
 }
 function gameQuarterTable(g) {
-  const rows = [g.homeId, g.awayId].map(tid => { const t = team(tid); if (!t) return null;
-    const rs = roster(tid).map(p => g.box?.[p.id]).filter(Boolean); if (!quartersComplete(rs)) return null;
-    return { t, qs: QS.map(q => sum(rs.map(r => r[q] || 0))) }; }).filter(Boolean);
+  const rows = [g.homeId, g.awayId].map(tid => { const t = team(tid), q = t && gameQuarters(g, tid); return q ? { t, tid, ...q } : null; }).filter(Boolean);
   if (!rows.length) return "";
-  return `<div class="tbl-wrap"><table><thead><tr><th class="l">קבוצה</th>${QS.map((q, i) => `<th>רבע ${i + 1}</th>`).join("")}<th>סה"כ</th></tr></thead><tbody>
-    ${rows.map(r => `<tr><td class="l">${badge(r.t)}</td>${r.qs.map(v => `<td>${v}</td>`).join("")}<td><b>${sum(r.qs)}</b></td></tr>`).join("")}</tbody></table></div>
-    <p class="small dim" style="margin:6px 0 0">מחושב מהנקודות לפי רבע של השחקנים.</p>`;
+  const hasOT = rows.some(r => r.ot);
+  return `<div class="tbl-wrap"><table><thead><tr><th class="l">קבוצה</th>${QS.map((q, i) => `<th>רבע ${i + 1}</th>`).join("")}${hasOT ? "<th>הארכה</th>" : ""}<th>סה"כ</th></tr></thead><tbody>
+    ${rows.map(r => `<tr><td class="l">${badge(r.t)}</td>${r.qs.map(v => `<td>${v}</td>`).join("")}${hasOT ? `<td>${r.ot}</td>` : ""}<td><b>${sum(r.qs) + r.ot}</b></td></tr>`).join("")}</tbody></table></div>`;
+}
+function gameTeamStatsTable(g) {
+  const sides = [g.homeId, g.awayId].map(tid => ({ t: team(tid), s: teamGameStats(g, tid) })).filter(x => x.t);
+  const rows = [["שלשות", "fg3m"], ["קליעות 2", "fg2m"], ["עונשין", "ftm"]].filter(([, k]) => sides.some(x => isN(x.s[k])));
+  if (!rows.length) return "";
+  const cell = (x, k) => { const v = x.s[k]; if (!isN(v)) return "—"; if (k === "ftm" && isN(x.s.fta)) return `${v}/${x.s.fta} <small class="dim">(${fp(x.s.fta ? v / x.s.fta : undefined)})</small>`; return v; };
+  return `<div class="tbl-wrap"><table><thead><tr><th class="l"></th>${sides.map(x => `<th>${badge(x.t, { link:false })}</th>`).join("")}</tr></thead><tbody>
+    ${rows.map(([l, k]) => `<tr><td class="l">${l}</td>${sides.map(x => `<td><b>${cell(x, k)}</b></td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
+}
+function teamStatsEditor(g) {
+  const sides = [["home", g.homeId], ["away", g.awayId]].map(([side, tid]) => ({ side, tid, t: team(tid) })).filter(x => x.t);
+  const line = (x) => { const q = QS.map(k => tsGet(g, x.tid, k)); if (!q.some(isN)) return "";
+    const qs = sum(q.filter(isN)) + (tsGet(g, x.tid, "ot") || 0), sc = g[x.side + "Score"];
+    return `<div class="small ${qs === sc ? "pos" : ""}" style="margin-top:4px">${esc(x.t.name)}: סכום הרבעים ${qs} · תוצאה ${sc ?? "—"} ${qs === sc ? "✓" : `<button class="btn sm" data-act="tsSync" data-side="${x.side}" data-v="${qs}">עדכן תוצאה ל-${qs}</button>`}</div>`; };
+  return `<div class="tbl-wrap bx"><table><thead><tr><th class="l sticky-col">קבוצה</th>${TS_FIELDS.map(([k, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>
+    ${sides.map(x => `<tr><td class="l sticky-col">${esc(x.t.name)}</td>${TS_FIELDS.map(([k]) => `<td><input type="number" min="0" inputmode="numeric" data-ts="${x.tid}|${k}" value="${tsGet(g, x.tid, k) ?? ""}"></td>`).join("")}</tr>`).join("")}
+  </tbody></table></div><div id="tsLines">${sides.map(line).join("")}</div>
+  <p class="small muted">כמו בדף המשחק של האיגוד: נקודות בכל רבע, ומספר השלשות, הקליעות של 2 והעונשין של כל קבוצה. ריק = לא ידוע.</p>`;
 }
 
 /* ================= פירוט קליעות ================= */
@@ -1117,7 +1168,7 @@ function boxCols(rows) {
   if (has((r, s) => s.hasF)) cols.push({ l:"עונשין", f:x => x.s.hasF ? ma(x.s.ftm, x.s.fta, x.s.kF) : "—", v:x => x.s.hasF ? x.s.ftm : undefined, t:"ft" });
   if (has(r => isN(r.oreb) || isN(r.dreb))) cols.push({ l:"ריב' ה/ג", f:x => (isN(x.r.oreb) || isN(x.r.dreb)) ? `${x.r.oreb ?? 0}/${x.r.dreb ?? 0}` : "—", v:x => x.r.oreb, t:"od", noBest:true });
   if (has((r, s) => s.kF)) cols.push({ l:"% ע'", title:"אחוז עונשין", f:x => x.s.kF && x.s.fta ? fp(x.s.ftm / x.s.fta) : "—", v:x => x.s.kF && x.s.fta ? x.s.ftm / x.s.fta : undefined, t:"ftp", noBest:true });
-  for (const k of ["reb","ast","stl","blk","tov","pf"]) if (has(r => isN(val(r, k)))) cols.push({ l:SL[k].s, title:SL[k].l, f:x => val(x.r, k) ?? "—", v:x => val(x.r, k), t:k, noBest: k === "tov" || k === "pf" });
+  for (const k of ["reb","ast","stl","blk","tov"]) if (has(r => isN(val(r, k)))) cols.push({ l:SL[k].s, title:SL[k].l, f:x => val(x.r, k) ?? "—", v:x => val(x.r, k), t:k, noBest: k === "tov" });
   for (const q of QS) if (has(r => isN(r[q]))) cols.push({ l:SL[q].s, title:SL[q].l, f:x => x.r[q] ?? "—", v:x => x.r[q], t:q });
   if (has(r => isN(r.pm))) cols.push({ l:"+/-", title:SL.pm.l, f:x => isN(x.r.pm) ? `<span class="${x.r.pm > 0 ? "pos" : x.r.pm < 0 ? "neg" : ""}">${sg(x.r.pm, 0)}</span>` : "—", v:x => x.r.pm, t:"pm" });
   if (has(r => isN(effOf(r))) && cols.length > 2) cols.push({ l:"יעי'", title:"יעילות", f:x => effOf(x.r) ?? "—", v:x => effOf(x.r), t:"eff" });
@@ -1177,9 +1228,9 @@ function openPlayerGame(gid, pid) {
   const my = home ? g.homeScore : g.awayScore, ot = home ? g.awayScore : g.homeScore, fin = isFinal(g);
   const a = aggRows([{ g, r }]), season = playerAgg(pid), s = shoot(r);
   const fgm = s.fg2m + s.fg3m, fga = s.fg2a + s.fg3a, pts = val(r, "pts");
-  const gmsc = isN(pts) && hasAll(r, ["oreb","dreb","ast","stl","blk","tov","pf"]) ? pts + 0.4 * fgm - 0.7 * fga - 0.4 * (s.fta - s.ftm) + 0.7 * (r.oreb || 0) + 0.3 * (r.dreb || 0) + (r.stl || 0) + 0.7 * (r.ast || 0) + 0.7 * (r.blk || 0) - 0.4 * (r.pf || 0) - (r.tov || 0) : undefined;
+  const gmsc = isN(pts) && hasAll(r, ["oreb","dreb","ast","stl","blk","tov"]) ? pts + 0.4 * fgm - 0.7 * fga - 0.4 * (s.fta - s.ftm) + 0.7 * (r.oreb || 0) + 0.3 * (r.dreb || 0) + (r.stl || 0) + 0.7 * (r.ast || 0) + 0.7 * (r.blk || 0) - (r.tov || 0) : undefined;
   const T = teamTotals(g, p.teamId);
-  const big = [["pts","נקודות"],["reb","ריבאונדים"],["ast","אסיסטים"],["stl","חטיפות"],["blk","חסימות"],["tov","איבודים"],["pf","עבירות"],["min","דקות"]]
+  const big = [["pts","נקודות"],["reb","ריבאונדים"],["ast","אסיסטים"],["stl","חטיפות"],["blk","חסימות"],["tov","איבודים"],["min","דקות"]]
     .filter(([k]) => isN(val(r, k))).map(([k, l]) => `<div class="pg-stat"><b>${val(r, k)}</b><span>${l}</span>${k === "reb" && (isN(r.oreb) || isN(r.dreb)) ? `<small>${r.oreb ?? 0} התקפה · ${r.dreb ?? 0} הגנה</small>` : ""}</div>`).join("");
   const adv = [
     isN(a.fgp) && ["אחוז מהשדה", fp(a.fgp), `${a.fgm}/${a.fga}`], isN(a.efg) && ["eFG%", fp(a.efg), "שלשה שווה יותר"], isN(a.ts) && ["TS%", fp(a.ts), "כולל עונשין"],
@@ -1231,6 +1282,7 @@ function pageGame(id) {
   </div>
   ${g.notes ? `<div class="card pad sec small">${esc(g.notes)}</div>` : ""}
   ${(() => { const q = gameQuarterTable(g); return q ? `<section class="sec"><div class="sec-h"><h2>נקודות לפי רבע</h2></div>${q}</section>` : ""; })()}
+  ${(() => { const t = gameTeamStatsTable(g); return t ? `<section class="sec"><div class="sec-h"><h2>סטטיסטיקה קבוצתית</h2></div>${t}</section>` : ""; })()}
   ${teamCompare(g)}
   <section class="sec"><div class="sec-h"><h2>${badge(H)}</h2></div>${H ? boxTable(g, H.id) : ""}</section>
   <section class="sec"><div class="sec-h"><h2>${badge(A)}</h2></div>${A ? boxTable(g, A.id) : ""}</section>
@@ -1249,7 +1301,7 @@ function teamCompare(g) {
   const R = [];
   const pr = (l, key, m, at) => { if (sides.every(x => x.a[at] > 0)) R.push({ l, v: sides.map(x => x.a[key]), sub: sides.map(x => `${x.a[m]}/${x.a[at]}`), pct: true }); };
   pr("אחוז מהשדה", "fgp", "fgm", "fga"); pr("אחוז מ-2", "fg2p", "fg2m", "fg2a"); pr("אחוז מ-3", "fg3p", "fg3m", "fg3a"); pr("אחוז עונשין", "ftp", "ftm", "fta");
-  for (const k of ["reb","oreb","dreb","ast","stl","blk","tov","pf"]) if (sides.every(x => isN(x.T[k]))) R.push({ l: SL[k].l, v: sides.map(x => x.T[k]), low: k === "tov" || k === "pf" });
+  for (const k of ["reb","oreb","dreb","ast","stl","blk","tov"]) if (sides.every(x => isN(x.T[k]))) R.push({ l: SL[k].l, v: sides.map(x => x.T[k]), low: k === "tov" });
   if (!R.length) return "";
   return `<section class="sec"><div class="sec-h"><h2>השוואת קבוצות</h2><span class="small muted">${esc(H.name)} מול ${esc(A.name)}</span></div><div class="card pad cmp">
     ${R.map(r => { const [h, a] = r.v, tot = (h + a) || 1, best = r.low ? (h < a ? 0 : h > a ? 1 : -1) : (h > a ? 0 : h < a ? 1 : -1);
@@ -1275,7 +1327,6 @@ function playerCols(withTeam) {
     { k:"stl", l:"חט'", fmt:x => f1(x.a.avg.stl), val:x => x.a.avg.stl },
     { k:"blk", l:"חס'", fmt:x => f1(x.a.avg.blk), val:x => x.a.avg.blk },
     { k:"tov", l:"איב'", fmt:x => f1(x.a.avg.tov), val:x => x.a.avg.tov },
-    { k:"pf", l:"עב'", fmt:x => f1(x.a.avg.pf), val:x => x.a.avg.pf },
     { k:"pm", l:"+/-", title:"פלוס/מינוס למשחק", fmt:x => `<span class="${x.a.avg.pm > 0 ? "pos" : x.a.avg.pm < 0 ? "neg" : ""}">${sg(x.a.avg.pm)}</span>`, val:x => x.a.avg.pm },
     { k:"fgp", l:"% שדה", fmt:x => fp(x.a.fgp), val:x => x.a.fgp },
     { k:"fg3p", l:"% 3", fmt:x => fp(x.a.fg3p), val:x => x.a.fg3p },
@@ -1319,7 +1370,7 @@ function shootCols() {
 }
 function totCols() {
   const c = (k, l) => ({ k, l, fmt: x => x.a.n[k] ? `${k === "pts" ? "<b>" : ""}${x.a.tot[k]}${k === "pts" ? "</b>" : ""}` : "—", val: x => x.a.n[k] ? x.a.tot[k] : undefined });
-  return [...baseCols(), c("pts", "נק'"), c("min", "דק'"), c("reb", "ריב'"), c("oreb", "ריב' הת'"), c("dreb", "ריב' הג'"), c("ast", "אס'"), c("stl", "חט'"), c("blk", "חס'"), c("tov", "איב'"), c("pf", "עב'"),
+  return [...baseCols(), c("pts", "נק'"), c("min", "דק'"), c("reb", "ריב'"), c("oreb", "ריב' הת'"), c("dreb", "ריב' הג'"), c("ast", "אס'"), c("stl", "חט'"), c("blk", "חס'"), c("tov", "איב'"),
     { k:"pm", l:"+/-", fmt:x => x.a.n.pm ? sg(x.a.tot.pm, 0) : "—", val:x => x.a.n.pm ? x.a.tot.pm : undefined },
     { k:"dd", l:"דאבל-דאבל", fmt:x => x.a.dd || "—", val:x => x.a.dd || undefined }];
 }
@@ -1336,7 +1387,7 @@ function pageTeam(id) {
   // ממוצעי קבוצה מהבוקס
   const full = !ptsOnlyTeam(id);
   const tAvg = {};
-  if (full) for (const k of ["reb","ast","stl","blk","tov","pf"]) { const v = done.map(g => teamTotals(g, id, true)[k]).filter(isN); tAvg[k] = v.length ? sum(v) / v.length : undefined; }
+  if (full) for (const k of ["reb","ast","stl","blk","tov"]) { const v = done.map(g => teamTotals(g, id, true)[k]).filter(isN); tAvg[k] = v.length ? sum(v) / v.length : undefined; }
   return `
   <div class="hero" style="border-color:${esc(t.color)}55">
     <div class="split"><div style="display:flex;gap:14px;align-items:center">${badge(t, { lg:true, noName:true, link:false })}
@@ -1357,6 +1408,7 @@ function pageTeam(id) {
   ${full ? (() => { const ta = aggRows(teamRows(id)); const tbl = shootingTable(ta, false); return acc("tm-shoot", "קליעות של הקבוצה", tbl ? `${tbl}<div style="margin-top:12px">${ptsFromBar(ta)}</div>` : "", { sub:"נכנסו, הוחטאו ואחוזים", icon:"🏀" }); })() : ""}
   ${full ? acc("tm-shots", "🔥 אזורים חמים ומפת זריקות", shotBody(shotsFor({ tid: id })), { icon:"🎯" }) : ""}
   ${id === myTeamId() ? `<a class="btn pri" href="#/myteam" style="margin-top:4px">⭐ לכל הסטטיסטיקה של הקבוצה</a>` : ""}
+  ${acc("tm-q", "נקודות לפי רבע", teamQuarterHtml(id), { sub:"כמה קלעו וספגו בכל רבע", icon:"⏱️" })}
   ${acc("tm-games", "משחקים", `<div class="grid g3">${gs.map(gameCard).join("") || `<div class="card pad muted">אין משחקים</div>`}</div>`, { sub:`${gs.length} משחקים`, open:true, icon:"📅" })}
   </div>`;
 }
@@ -1371,7 +1423,6 @@ function pagePlayer(id) {
     isN(a.avg.reb) && tile("ריבאונדים", f1(a.avg.reb)), isN(a.avg.ast) && tile("אסיסטים", f1(a.avg.ast)),
     isN(a.avg.stl) && tile("חטיפות", f1(a.avg.stl)), isN(a.avg.blk) && tile("חסימות", f1(a.avg.blk)),
     isN(a.avg.min) && tile("דקות", f1(a.avg.min)), isN(a.avg.tov) && tile("איבודים", f1(a.avg.tov)),
-    isN(a.avg.pf) && tile("עבירות", f1(a.avg.pf)),
     isN(a.avg.pm) && `<div class="card tile"><span>פלוס/מינוס</span><b class="${a.avg.pm > 0 ? "pos" : a.avg.pm < 0 ? "neg" : ""}">${sg(a.avg.pm)}</b><small> סה"כ ${sg(a.tot.pm, 0)}</small></div>`,
     isN(a.fgp) && tile("אחוז מהשדה", fp(a.fgp), `${a.fgm}/${a.fga}`), isN(a.fg3p) && tile("אחוז מ-3", fp(a.fg3p), `${a.fg3m}/${a.fg3a}`),
     isN(a.ftp) && tile("אחוז עונשין", fp(a.ftp), `${a.ftm}/${a.fta}`), isN(a.efg) && tile("eFG%", fp(a.efg)), isN(a.ts) && tile("TS%", fp(a.ts)),
@@ -1409,7 +1460,7 @@ function pagePlayer(id) {
   if (fullP && log.some(x => isN(x.r.fg2a) || isN(x.r.fg2m))) lcols.push(["2 נק'", r => ma(r.fg2m, r.fg2a)]);
   if (fullP && log.some(x => isN(x.r.fg3a) || isN(x.r.fg3m))) lcols.push(["3 נק'", r => ma(r.fg3m, r.fg3a)]);
   if (fullP && log.some(x => isN(x.r.fta) || isN(x.r.ftm))) lcols.push(["עונשין", r => ma(r.ftm, r.fta)]);
-  for (const k of ["reb","ast","stl","blk","tov","pf"]) if (has(k)) lcols.push([SL[k].s, r => val(r, k) ?? "—"]);
+  for (const k of ["reb","ast","stl","blk","tov"]) if (has(k)) lcols.push([SL[k].s, r => val(r, k) ?? "—"]);
   const logHtml = log.length ? `<div class="tbl-wrap"><table><thead><tr><th class="l">תאריך</th><th class="l">יריבה</th><th>תוצאה</th>${lcols.map(c => `<th>${c[0]}</th>`).join("")}</tr></thead><tbody>
     ${log.slice().reverse().map(({ g, r }) => {
       const home = g.homeId === p.teamId, opp = team(home ? g.awayId : g.homeId);
@@ -1587,7 +1638,7 @@ function pageMyTeam() {
   <div class="accs">
     ${acc("st-my", "סיכום העונה", summary, { sub:"מאזן, נקודות, ניצחונות והפסדים", open:true, icon:"📋" })}
     ${acc("st-avg", "ממוצעים ואחוזים", avgHtml, { sub:"כל הנתונים של הקבוצה למשחק", open:true, icon:"📊" })}
-    ${(() => { const qa = teamQuarterAvgs(mid); return acc("st-q", "נקודות לפי רבע", qa.n ? quarterBars(qa.avgs, `ממוצע נקודות של הקבוצה בכל רבע, מ-${qa.n} משחקים.`) : "", { sub:"באיזה רבע הקבוצה הכי חזקה", open:true, icon:"⏱️" }); })()}
+    ${acc("st-q", "נקודות לפי רבע", teamQuarterHtml(mid), { sub:"כמה קלענו וספגנו בכל רבע", open:true, icon:"⏱️" })}
     ${acc("st-players", "השחקנים – כל הנתונים", plHtml, { sub:`${ros.length} שחקנים · ממוצעים, קליעות ואחוזים`, open:true, icon:"👥" })}
     ${acc("st-lead", "מובילי הקבוצה", mvpHtml + (teamLead ? `<div class="grid g3" style="margin-top:12px">${teamLead}</div>` : ""), { sub:"מי הכי טוב בכל נתון", open:true, icon:"⭐" })}
     ${acc("st-share", "מי קלע את הנקודות", shareHtml, { sub:"חלוקת הנקודות בקבוצה", icon:"🥧" })}
@@ -1675,7 +1726,7 @@ function leagueStatsTiles() {
 // ממוצעים ואחוזים של הקבוצה למשחק
 function teamAvgHtml(mid, S) {
   const done = sortedGames().filter(g => isFinal(g) && (g.homeId === mid || g.awayId === mid));
-  const tots = done.map(g => teamTotals(g, mid, true));
+  const tots = done.map(g => teamGameStats(g, mid));
   const per = (k) => { const v = tots.map(t => t[k]).filter(isN); return v.length ? { v: sum(v) / v.length, n: v.length } : null; };
   const ta = aggRows(teamRows(mid));
   const t1 = (l, x, sub = "") => x ? statTile(l, f1(x.v), sub || `ב-${x.n} משחקים`) : "";
@@ -1684,16 +1735,14 @@ function teamAvgHtml(mid, S) {
     S && S.gp ? statTile("נקודות חובה", f1(S.oppg), "ספגנו בממוצע") : "",
     t1("ריבאונדים", per("reb")), t1("ריב' התקפה", per("oreb")), t1("ריב' הגנה", per("dreb")),
     t1("אסיסטים", per("ast")), t1("חטיפות", per("stl")), t1("חסימות", per("blk")),
-    t1("איבודים", per("tov")), t1("עבירות", per("pf")),
-    ta.n3 ? statTile("שלשות", f1(ta.fg3mAll / ta.n3), "נכנסו למשחק") : "",
-    ta.n2 ? statTile("קליעות 2", f1(ta.fg2mAll / ta.n2), "נכנסו למשחק") : "",
-    ta.nf ? statTile("עונשין", f1(ta.ftmAll / ta.nf), "נכנסו למשחק") : "",
+    t1("איבודים", per("tov")),
+    t1("שלשות", per("fg3m")), t1("קליעות 2", per("fg2m")), t1("עונשין שנכנסו", per("ftm")),
   ].join("");
   const pc = (l, v, sub) => isN(v) ? `<div class="card tile st-tile pct-tile"><span>${l}</span><b>${fp(v)}</b><div class="bar"><i style="width:${Math.min(100, v * 100).toFixed(0)}%"></i></div>${sub ? `<small>${sub}</small>` : ""}</div>` : "";
   const sumT = (k) => sum(tots.map(t => t[k]).filter(isN));
   const pcts = [
     pc("אחוז מהשדה", ta.fgp, `${ta.fgm}/${ta.fga}`), pc("אחוז מ-2", ta.fg2p, `${ta.fg2m}/${ta.fg2a}`), pc("אחוז מ-3", ta.fg3p, `${ta.fg3m}/${ta.fg3a}`),
-    pc("אחוז עונשין", ta.ftp, `${ta.ftm}/${ta.fta}`), pc("eFG%", ta.efg, "שלשה שווה יותר"), pc("TS%", ta.ts, "כולל עונשין"),
+    (() => { const pr = tots.filter(t => isN(t.ftm) && isN(t.fta)), m = sum(pr.map(t => t.ftm)), a = sum(pr.map(t => t.fta)); return a ? pc("אחוז עונשין", m / a, `${m}/${a}`) : pc("אחוז עונשין", ta.ftp, `${ta.ftm}/${ta.fta}`); })(), pc("eFG%", ta.efg, "שלשה שווה יותר"), pc("TS%", ta.ts, "כולל עונשין"),
     S && S.gp ? pc("אחוז ניצחונות", S.pct, `${S.w} מתוך ${S.gp}`) : "",
     isN(per("ast")?.v) && sumT("tov") ? statTile("אסיסט לאיבוד", (sumT("ast") / sumT("tov")).toFixed(2), "יחס") : "",
     isN(ta.pps) ? statTile("נקודות לזריקה", ta.pps.toFixed(2), "מהשדה") : "",
@@ -1702,10 +1751,10 @@ function teamAvgHtml(mid, S) {
   const ma = (m, a) => a > m ? `${m}/${a}` : `${m}`;
   const totals = [
     S && S.gp ? statTile("נקודות", S.pf, `ב-${S.gp} משחקים`) : "",
-    ta.n3 ? statTile("שלשות", ta.fg3mAll, `${3 * ta.fg3mAll} נק'${ta.fg3a ? ` · ${ta.fg3m}/${ta.fg3a} (${fp(ta.fg3p)})` : ""}`) : "",
-    ta.n2 ? statTile("קליעות של 2", ta.fg2mAll, `${2 * ta.fg2mAll} נק'${ta.fg2a ? ` · ${ta.fg2m}/${ta.fg2a} (${fp(ta.fg2p)})` : ""}`) : "",
-    ta.nf ? statTile("עונשין", ta.ftmAll, `${ta.ftmAll} נק'${ta.fta ? ` · ${ta.ftm}/${ta.fta} (${fp(ta.ftp)})` : ""}`) : "",
-    tots.some(t => isN(t.pf)) ? statTile("עבירות", sumT("pf"), `ב-${tots.filter(t => isN(t.pf)).length} משחקים`) : "",
+    tots.some(t => isN(t.fg3m)) ? statTile("שלשות", sumT("fg3m"), `${3 * sumT("fg3m")} נק' · ב-${tots.filter(t => isN(t.fg3m)).length} משחקים`) : "",
+    tots.some(t => isN(t.fg2m)) ? statTile("קליעות של 2", sumT("fg2m"), `${2 * sumT("fg2m")} נק' · ב-${tots.filter(t => isN(t.fg2m)).length} משחקים`) : "",
+    tots.some(t => isN(t.ftm)) ? (() => { const pr = tots.filter(t => isN(t.ftm) && isN(t.fta)), m = sum(pr.map(t => t.ftm)), a = sum(pr.map(t => t.fta));
+      return statTile("עונשין", sumT("ftm"), a ? `${m}/${a} נכנסו/ניסיונות · ${fp(m / a)}` : `${sumT("ftm")} נק'`); })() : "",
     tots.some(t => isN(t.reb)) ? statTile("ריבאונדים", sumT("reb")) : "",
     tots.some(t => isN(t.ast)) ? statTile("אסיסטים", sumT("ast")) : "",
   ].join("");
@@ -1713,7 +1762,7 @@ function teamAvgHtml(mid, S) {
   return `${totals ? `<div class="mini-h">סה"כ של הקבוצה בעונה</div><div class="grid g4">${totals}</div>` : ""}
     ${avgs ? `<div class="mini-h">ממוצע למשחק</div><div class="grid g4">${avgs}</div>` : ""}
     ${pcts ? `<div class="mini-h">אחוזים</div><div class="grid g4">${pcts}</div>` : ""}
-    <p class="small dim" style="margin:8px 0 0">מחושב רק מהמשחקים שבהם הוזנו נתוני שחקנים.</p>`;
+    <p class="small dim" style="margin:8px 0 0">מחושב מנתוני הקבוצה במשחק (אם הוזנו), אחרת מסכום השחקנים – רק במשחקים שבהם הנתון הוזן ל-75% לפחות מהשחקנים.</p>`;
 }
 
 /* ================= ניהול ================= */
@@ -1763,6 +1812,7 @@ function adminGameEditor(id) {
     <label class="f" style="margin-top:12px">הערות<textarea class="inp" rows="2" data-gf="notes">${esc(g.notes || "")}</textarea></label>
     <p class="small muted" style="margin:10px 0 0">חובה רק התוצאה. נתוני שחקנים – רשות, ומה שתזין יופיע.</p>
   </div>
+  <section class="sec"><div class="sec-h"><h2>נתוני קבוצות (רשות)</h2></div><div class="card pad">${teamStatsEditor(g)}</div></section>
   <section class="sec"><div class="sec-h"><h2>נתוני שחקנים (רשות)</h2></div><div id="boxArea">${boxEditor(g)}</div></section>`;
 }
 function boxEditor(g) {
@@ -1788,8 +1838,8 @@ function gridEditor(g, tid) {
   const cols = ui.cols.filter(k => SL[k]);
   const ps = roster(tid);
   const T = teamTotals(g, tid);
-  const presets = [["בסיס", "נקודות לפי רבע, שלשות, קליעות 2, עונשין (+ניסיונות), עבירות, +/-", ["pts","q1","q2","q3","q4","fg3m","fg2m","ftm","fta","pf","pm"]],
-    ["מלא", "הכול + ריבאונד הגנה, התקפה וכללי", ["min","pts","fg3m","fg3a","fg2m","fg2a","ftm","fta","dreb","oreb","reb","ast","stl","blk","tov","pf"]]];
+  const presets = [["בסיס", "נקודות, שלשות, קליעות 2, עונשין (+ניסיונות), +/-", ["pts","fg3m","fg2m","ftm","fta","pm"]],
+    ["מלא", "הכול + ריבאונד הגנה, התקפה וכללי", ["min","pts","fg3m","fg3a","fg2m","fg2a","ftm","fta","dreb","oreb","reb","ast","stl","blk","tov"]]];
   const cur = cols.join(",");
   return `<div class="preset-row">${presets.map(([l, d, ks]) => `<button class="preset ${cur === ks.join(",") ? "on" : ""}" data-act="preset" data-v="${ks.join(",")}"><b>${l}</b><small>${d}</small></button>`).join("")}</div>
   <div class="small muted" style="margin-top:6px">או בחר בעצמך אילו נתונים להזין (לחיצה מוסיפה / מורידה):</div>
@@ -1803,7 +1853,7 @@ function gridEditor(g, tid) {
   <form class="toolbar" data-form="quickPlayer" data-team="${tid}" style="margin-top:12px">
     <input class="inp" name="number" placeholder="מס'" inputmode="numeric" style="width:72px"><input class="inp" name="name" placeholder="שם שחקן חדש" required style="flex:1;min-width:140px">
     <button class="btn">+ הוסף שחקן לקבוצה</button></form>
-  <p class="small muted">תא ריק = לא ידוע (לא נחשב בכלל, לא כמו 0). אם השחקן באמת עשה 0 – כתוב 0. הנקודות מחושבות לבד (המספר האפור) מהקליעות, או מהנקודות לפי רבע. ניס' ע' = כמה עונשין זרק בסך הכול (כדי לחשב אחוז עונשין). +/- יכול להיות גם במינוס.</p>`;
+  <p class="small muted">תא ריק = לא ידוע (לא נחשב בכלל, לא כמו 0). אם השחקן באמת עשה 0 – כתוב 0. הנקודות מחושבות לבד (המספר האפור) מהקליעות. נקודות לפי רבע של הקבוצה – בטבלת "נתוני קבוצות" למעלה. ניס' ע' = כמה עונשין זרק בסך הכול (כדי לחשב אחוז עונשין). +/- יכול להיות גם במינוס.</p>`;
 }
 const TAP = [
   { id:"fm", l:"עונשין ✓", c:"g", f:r => { inc(r, "ftm"); inc(r, "fta"); bump(r, "pts", 1); addQ(r, 1); } },
@@ -1813,11 +1863,10 @@ const TAP = [
   { id:"rb", l:"ריבאונד (כללי)", f:r => { r.reb = (val(r, "reb") || 0) + 1; } },
   { id:"as", l:"אסיסט", f:r => inc(r, "ast") }, { id:"st", l:"חטיפה", f:r => inc(r, "stl") },
   { id:"bl", l:"חסימה", f:r => inc(r, "blk") }, { id:"to", l:"איבוד", c:"r", f:r => inc(r, "tov") },
-  { id:"pf", l:"עבירה", c:"r", f:r => inc(r, "pf") },
 ];
 function inc(r, k, n = 1) { r[k] = (isN(r[k]) ? r[k] : 0) + n; }
 // ברישום מהיר רושמים הכול – אז מה שלא נלחץ הוא באמת 0
-const TAP_KEYS = ["fg2m","fg2a","fg3m","fg3a","ftm","fta","oreb","dreb","ast","stl","blk","tov","pf"];
+const TAP_KEYS = ["fg2m","fg2a","fg3m","fg3a","ftm","fta","oreb","dreb","ast","stl","blk","tov"];
 function zeroFill(r) { for (const k of TAP_KEYS) if (!isN(r[k])) r[k] = 0; return r; }
 function addQ(r, n) { if (ui.tapQ) inc(r, "q" + ui.tapQ, n); }
 function bump(r, k, n) { if (isN(r[k])) r[k] += n; }               // רק אם הוזן ישירות (אחרת מחושב)
@@ -1829,7 +1878,7 @@ function tapEditor(g, tid) {
   const sp = player(tapSel);
   return `<div class="tap">
     <div class="small muted">1. בחר שחקן · 2. לחץ על הפעולה. כל לחיצה נשמרת מיד.</div>
-    <div class="split"><span class="small muted">רבע נוכחי (כדי לרשום נקודות לפי רבע):</span><div class="seg">${["","1","2","3","4"].map(q => `<button class="${(ui.tapQ || "") === q ? "on" : ""}" data-act="tapQ" data-v="${q}">${q || "בלי"}</button>`).join("")}</div></div>
+
     <div class="pl-grid">${ps.map(p => { const r = g.box[p.id]; return `<button class="pl-btn ${p.id === tapSel ? "sel" : ""}" data-act="tapSel" data-id="${p.id}"><b>${esc(p.number ?? "")}</b><span>${esc(p.name)}</span><em>${r ? `${val(r, "pts") ?? 0} נק'` : "&nbsp;"}</em></button>`; }).join("")}</div>
     ${(() => {
       const ids = new Set(ps.map(p => p.id)); const sh = (g.shots || []).filter(s => ids.has(s.pid));
@@ -2049,6 +2098,7 @@ const ACT = {
   boxMode(el) { ui.boxMode = el.dataset.v; saveUi(); rerenderBox(); },
   preset(el) { ui.cols = el.dataset.v.split(","); saveUi(); rerenderBox(); },
   togCol(el) { const k = el.dataset.k; ui.cols = ui.cols.includes(k) ? ui.cols.filter(x => x !== k) : STATS.map(s => s.k).filter(x => ui.cols.includes(x) || x === k); saveUi(); rerenderBox(); },
+  tsSync(el) { const g = curGame(); g[el.dataset.side + "Score"] = +el.dataset.v; if (isN(g.homeScore) && isN(g.awayScore) && g.status === "scheduled") g.status = "final"; commit(); },
   syncScore() { const g = curGame(); const side = ui.boxSide === "away" ? "awayScore" : "homeScore"; const tid = ui.boxSide === "away" ? g.awayId : g.homeId;
     g[side] = teamTotals(g, tid).pts; if (isN(g.homeScore) && isN(g.awayScore) && g.status === "scheduled") g.status = "final"; commit(); },
   tapSel(el) { tapSel = el.dataset.id; rerenderBox(); },
@@ -2160,6 +2210,14 @@ let searchT;
 document.addEventListener("input", (e) => {
   const el = e.target;
   if (el.dataset.act === "psearch") { clearTimeout(searchT); searchT = setTimeout(() => { const q = qs(); el.value ? q.set("q", el.value) : q.delete("q"); go("#/players" + (q.toString() ? "?" + q : ""), true, true); }, 250); return; }
+  if (el.dataset.ts) {
+    const g = curGame(); const [tid, k] = el.dataset.ts.split("|");
+    g.teamStats ||= {}; const o = g.teamStats[tid] ||= {};
+    if (el.value === "") delete o[k]; else o[k] = Math.max(0, Math.round(+el.value) || 0);
+    if (!Object.keys(o).length) delete g.teamStats[tid];
+    const box = $("#tsLines"); if (box) box.outerHTML = `<div id="tsLines">${(() => { const tmp = document.createElement("div"); tmp.innerHTML = teamStatsEditor(g); return tmp.querySelector("#tsLines").innerHTML; })()}</div>`;
+    commit(false); return;
+  }
   if (el.dataset.gf) return gameField(el, false);
   if (el.dataset.bx) {
     const g = curGame(); const [pid, k] = el.dataset.bx.split("|");
