@@ -365,6 +365,34 @@ img.ball{width:34px;height:34px;object-fit:contain;border-radius:9px;flex:none}
 .bnav a.on .nav-logo{outline:2px solid var(--accent);outline-offset:1px}
 @media(max-width:420px){.bnav a span{font-size:10px}}
 
+/* אזורים חמים */
+.hz-court .hz > *{stroke:var(--card);stroke-width:3}
+.hz-none > *{fill:var(--card2)}
+.hz-few > *{fill:color-mix(in srgb,#9aa0b0 28%,var(--card2))}
+i.hz-few,.hz-chip.hz-few{background:color-mix(in srgb,#9aa0b0 28%,var(--card2))}
+.hz-avg > *,i.hz-avg,.hz-chip.hz-avg{fill:#c3c7d2;background:#c3c7d2}
+.hz-hot1 > *,i.hz-hot1,.hz-chip.hz-hot1{fill:#f6a29c;background:#f6a29c}
+.hz-hot2 > *,i.hz-hot2,.hz-chip.hz-hot2{fill:#e5484d;background:#e5484d}
+.hz-cold1 > *,i.hz-cold1,.hz-chip.hz-cold1{fill:#9cc3f5;background:#9cc3f5}
+.hz-cold2 > *,i.hz-cold2,.hz-chip.hz-cold2{fill:#3b7fe0;background:#3b7fe0}
+.hz-court .court-lines{opacity:.55}
+.hz-t{font:800 22px var(--font);text-anchor:middle;fill:#0b1020;paint-order:stroke;stroke:rgba(255,255,255,.85);stroke-width:4px;stroke-linejoin:round}
+.hz-sub{font-size:13px;font-weight:600}
+.hz-ts{font-size:12px}
+.hz-ts.hz-sub{font-size:10px}
+.hz-legend{display:flex;flex-wrap:wrap;gap:6px 12px;justify-content:center;font-size:12px;color:var(--muted);margin:4px 0 6px}
+.hz-legend span{display:inline-flex;align-items:center;gap:5px}
+.hz-legend i{width:14px;height:14px;border-radius:4px;display:inline-block}
+.hz-chip{width:12px;height:12px;border-radius:3px;display:inline-block;vertical-align:-1px}
+
+/* בחירת סוג הזנה */
+.preset-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:4px 0 8px}
+.preset{all:unset;box-sizing:border-box;cursor:pointer;padding:12px 14px;border-radius:14px;border:2px solid var(--line);background:var(--card);text-align:start}
+.preset b{display:block;font-size:17px}
+.preset small{display:block;color:var(--muted);font-size:12px;margin-top:2px}
+.preset.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--card))}
+.more-cols summary{cursor:pointer;margin:2px 0 6px}
+
 </style>
 </head>
 <body>
@@ -417,7 +445,7 @@ let ADMIN_PW = SS.get("league_pw") || "";
 let saveTimer = null, saving = false, dirty = false;
 const sortState = {};
 let ui = {}; try { ui = JSON.parse(LS.get("league_ui") || "{}") || {}; } catch {}
-ui.pview ??= "pts"; ui.boxSide ??= "home"; ui.boxMode ??= "grid"; ui.cols ??= ["pts","reb","ast","stl","blk","tov","pf"];
+ui.pview ??= "pts"; ui.boxSide ??= "home"; ui.boxMode ??= "grid"; ui.cols ??= ["pts","fg3m","fg2m","ftm"];
 const saveUi = () => LS.set("league_ui", JSON.stringify(ui));
 let tapSel = null, pendingShot = null; const tapLog = [];
 
@@ -473,9 +501,9 @@ const confirmBox = (title, text, okLabel = "אישור", danger = false) => moda
 const STATS = [
   { k:"min",  s:"דק'",  l:"דקות" },
   { k:"pts",  s:"נק'",  l:"נקודות" },
-  { k:"fg2m", s:"2 קל'", l:"קליעות 2" },  { k:"fg2a", s:"2 נס'", l:"ניסיונות 2" },
-  { k:"fg3m", s:"3 קל'", l:"קליעות 3" },  { k:"fg3a", s:"3 נס'", l:"ניסיונות 3" },
-  { k:"ftm",  s:"ע' קל'", l:"קליעות עונשין" }, { k:"fta", s:"ע' נס'", l:"ניסיונות עונשין" },
+  { k:"fg2m", s:"קליעות 2", l:"קליעות של 2 שנכנסו" },  { k:"fg2a", s:"ניס' 2", l:"ניסיונות 2 (נכנסו + החטאות)" },
+  { k:"fg3m", s:"שלשות", l:"שלשות שנכנסו" },  { k:"fg3a", s:"ניס' 3", l:"ניסיונות 3 (נכנסו + החטאות)" },
+  { k:"ftm",  s:"עונשין", l:"עונשין שנכנסו (נקודה אחת)" }, { k:"fta", s:"ניס' ע'", l:"ניסיונות עונשין" },
   { k:"oreb", s:"ריב' הת'", l:"ריבאונד התקפה" }, { k:"dreb", s:"ריב' הג'", l:"ריבאונד הגנה" },
   { k:"reb",  s:"ריב'", l:"ריבאונדים" },
   { k:"ast",  s:"אס'",  l:"אסיסטים" }, { k:"stl", s:"חט'", l:"חטיפות" }, { k:"blk", s:"חס'", l:"חסימות" },
@@ -750,7 +778,9 @@ function courtSvg(shots, opts = {}) {
   }).join("");
   const pend = opts.pending ? `<circle cx="${opts.pending.x}" cy="${opts.pending.y}" r="13" class="shot-pend"/><circle cx="${opts.pending.x}" cy="${opts.pending.y}" r="3" class="shot-pend-dot"/>` : "";
   return `<svg class="court ${opts.interactive ? "int" : ""}" viewBox="0 0 500 470" ${opts.interactive ? `data-act="court"` : ""} role="img" aria-label="מפת זריקות">
-    <g class="court-lines" fill="none" stroke-width="2.5">
+    ${COURT_LINES}${marks}${pend}</svg>`;
+}
+const COURT_LINES = `<g class="court-lines" fill="none" stroke-width="2.5">
       <rect x="2" y="2" width="496" height="466" rx="6"/>
       <rect x="168" y="2" width="164" height="191"/>
       <circle cx="250" cy="193" r="60"/>
@@ -759,8 +789,7 @@ function courtSvg(shots, opts = {}) {
       <path d="M220 40H280"/>
       <circle cx="250" cy="52.5" r="7.5"/>
       <path d="M190 468A60 60 0 0 1 310 468"/>
-    </g>${marks}${pend}</svg>`;
-}
+    </g>`;
 function zoneTable(shots) {
   if (!shots.length) return "";
   const rows = Object.entries(ZONES).map(([k, l]) => {
@@ -772,6 +801,87 @@ function zoneTable(shots) {
     ${rows.map(r => `<tr><td class="l">${r.l}</td><td>${r.m}</td><td>${r.a - r.m}</td><td><b>${fp(r.m / r.a)}</b></td><td><div class="bar"><i style="width:${(r.m / r.a * 100).toFixed(0)}%"></i></div></td></tr>`).join("")}
     <tr class="tot"><td class="l">סה"כ</td><td>${tm}</td><td>${shots.length - tm}</td><td>${fp(tm / shots.length)}</td><td></td></tr></tbody></table></div>`;
 }
+/* ================= אזורים חמים (Hot zones) ================= */
+const HZ = {
+  ra:   { l:"מתחת לסל",          x:250, y:84,  g:"ra" },
+  paint:{ l:"בצבע",              x:250, y:160, g:"paint" },
+  midL: { l:"חצי מרחק – שמאל",   x:98,  y:92,  g:"mid" },
+  midC: { l:"חצי מרחק – מרכז",   x:250, y:242, g:"mid" },
+  midR: { l:"חצי מרחק – ימין",   x:402, y:92,  g:"mid" },
+  c3L:  { l:"3 מהפינה – שמאל",   x:16,  y:52,  g:"c3", small:true },
+  w3L:  { l:"3 מהכנף – שמאל",    x:62,  y:300, g:"w3" },
+  top3: { l:"3 מלמעלה",          x:250, y:392, g:"w3" },
+  w3R:  { l:"3 מהכנף – ימין",    x:438, y:300, g:"w3" },
+  c3R:  { l:"3 מהפינה – ימין",   x:484, y:52,  g:"c3", small:true },
+};
+const HZ_DEF = { ra:.50, paint:.40, mid:.33, c3:.30, w3:.27 };   // ממוצע מקובל לכל סוג אזור
+function hzAngle(x, y) { let a = Math.atan2(y - 52.5, x - 250) * 180 / Math.PI; if (a < -90) a += 360; return a; }
+function hotZoneOf(s) {
+  const a = hzAngle(s.x, s.y);
+  if (s.three) {
+    if (s.y <= 140 && s.x < 120) return "c3L"; if (s.y <= 140 && s.x > 380) return "c3R";
+    return a < 70 ? "w3R" : a > 110 ? "w3L" : "top3";
+  }
+  if (Math.hypot(s.x - 250, s.y - 52.5) <= 60) return "ra";
+  if (s.x >= 168 && s.x <= 332 && s.y <= 193) return "paint";
+  return a < 60 ? "midR" : a > 120 ? "midL" : "midC";
+}
+function hzCount(shots) {
+  const c = Object.fromEntries(Object.keys(HZ).map(k => [k, { m: 0, a: 0 }]));
+  for (const s of shots) { const z = c[hotZoneOf(s)]; z.a++; if (s.made) z.m++; }
+  return c;
+}
+// ממוצע להשוואה: לשחקן – הממוצע של הקבוצה שלו באותו אזור; לקבוצה – ממוצע מקובל
+function hzBase(baseTid) {
+  if (!baseTid) return Object.fromEntries(Object.keys(HZ).map(k => [k, HZ_DEF[HZ[k].g]]));
+  const all = hzCount(shotsFor({ tid: baseTid })), grp = {};
+  for (const [k, z] of Object.entries(all)) { const g = HZ[k].g; grp[g] ||= { m: 0, a: 0 }; grp[g].m += z.m; grp[g].a += z.a; }
+  return Object.fromEntries(Object.keys(HZ).map(k => { const z = all[k], g = grp[HZ[k].g];
+    return [k, z.a >= 12 ? z.m / z.a : g.a >= 20 ? g.m / g.a : HZ_DEF[HZ[k].g]]; }));
+}
+function hzLevel(z, base) {
+  if (!z.a) return "none"; if (z.a < 3) return "few";
+  const d = z.m / z.a - base; return d >= 0.1 ? "hot2" : d >= 0.03 ? "hot1" : d <= -0.1 ? "cold2" : d <= -0.03 ? "cold1" : "avg";
+}
+let hzSeq = 0;
+function hotZonesSvg(shots, baseTid) {
+  const c = hzCount(shots), base = hzBase(baseTid), id = "hz" + (++hzSeq);
+  const wedge = (a1, a2) => { const pts = ["250,52.5"]; for (let a = a1; ; a = Math.min(a + 20, a2)) { const r = a * Math.PI / 180; pts.push(`${(250 + 1400 * Math.cos(r)).toFixed(1)},${(52.5 + 1400 * Math.sin(r)).toFixed(1)}`); if (a >= a2) break; } return pts.join(" "); };
+  const cls = (k) => "hz-" + hzLevel(c[k], base[k]);
+  const shape = (k, inner) => `<g class="hz ${cls(k)}"><title>${esc(HZ[k].l)}: ${c[k].m}/${c[k].a}${c[k].a ? " (" + fp(c[k].m / c[k].a) + ")" : ""}</title>${inner}</g>`;
+  const label = (k) => { const z = c[k]; if (!z.a) return ""; const p = HZ[k];
+    return p.small ? `<text class="hz-t hz-ts" x="${p.x}" y="${p.y}">${Math.round(z.m / z.a * 100)}%</text><text class="hz-t hz-ts hz-sub" x="${p.x}" y="${p.y + 16}">${z.m}/${z.a}</text>`
+      : `<text class="hz-t" x="${p.x}" y="${p.y}">${Math.round(z.m / z.a * 100)}%</text><text class="hz-t hz-sub" x="${p.x}" y="${p.y + 19}">${z.m}/${z.a}</text>`; };
+  return `<svg class="court hz-court" viewBox="0 0 500 470" role="img" aria-label="אזורים חמים">
+    <defs>
+      <clipPath id="${id}o"><path clip-rule="evenodd" d="M0 0H500V470H0Z M30 0V100A225 225 0 0 0 470 100V0Z"/></clipPath>
+      <clipPath id="${id}i"><path d="M30 0V100A225 225 0 0 0 470 100V0Z"/></clipPath>
+    </defs>
+    <g clip-path="url(#${id}o)">
+      ${shape("w3R", `<polygon points="${wedge(-90, 70)}"/>`)}${shape("top3", `<polygon points="${wedge(70, 110)}"/>`)}${shape("w3L", `<polygon points="${wedge(110, 270)}"/>`)}
+      ${shape("c3R", `<rect x="380" y="0" width="120" height="140"/>`)}${shape("c3L", `<rect x="0" y="0" width="120" height="140"/>`)}
+    </g>
+    <g clip-path="url(#${id}i)">
+      ${shape("midR", `<polygon points="${wedge(-90, 60)}"/>`)}${shape("midC", `<polygon points="${wedge(60, 120)}"/>`)}${shape("midL", `<polygon points="${wedge(120, 270)}"/>`)}
+    </g>
+    ${shape("paint", `<rect x="168" y="0" width="164" height="193"/>`)}
+    ${shape("ra", `<circle cx="250" cy="52.5" r="60"/>`)}
+    ${COURT_LINES}
+    ${Object.keys(HZ).map(label).join("")}
+  </svg>`;
+}
+function hotZonesTable(shots, baseTid) {
+  const c = hzCount(shots), base = hzBase(baseTid);
+  const rows = Object.keys(HZ).filter(k => c[k].a);
+  if (!rows.length) return "";
+  const nm = { hot2:"🔥 חם מאוד", hot1:"חם", avg:"ממוצע", cold1:"קר", cold2:"❄️ קר מאוד", few:"מעט זריקות" };
+  return `<div class="tbl-wrap" style="margin-top:10px"><table><thead><tr><th class="l">אזור</th><th>נכנסו/ניסיונות</th><th>אחוז</th><th>מול הממוצע</th><th class="l">מצב</th></tr></thead><tbody>
+    ${rows.map(k => { const z = c[k], pc = z.m / z.a, d = pc - base[k], lv = hzLevel(z, base[k]);
+      return `<tr><td class="l">${HZ[k].l}</td><td>${z.m}/${z.a}</td><td><b>${fp(pc)}</b></td><td class="${lv === "few" ? "dim" : d > 0.005 ? "pos" : d < -0.005 ? "neg" : "dim"}">${d > 0 ? "+" : ""}${(d * 100).toFixed(0)}%</td><td class="l"><span class="hz-chip hz-${lv}"></span> ${nm[lv]}</td></tr>`; }).join("")}
+  </tbody></table></div>`;
+}
+const hzLegend = `<div class="hz-legend"><span><i class="hz-hot2"></i>חם מאוד</span><span><i class="hz-hot1"></i>חם</span><span><i class="hz-avg"></i>ממוצע</span><span><i class="hz-cold1"></i>קר</span><span><i class="hz-cold2"></i>קר מאוד</span><span><i class="hz-few"></i>פחות מ-3 זריקות</span></div>`;
+
 // "מגירה" – כותרת שנפתחת ונסגרת בלחיצה
 function acc(key, title, body, { sub = "", open = false, icon = "" } = {}) {
   if (!body) return "";
@@ -780,9 +890,13 @@ function acc(key, title, body, { sub = "", open = false, icon = "" } = {}) {
     <button class="acc-h" data-act="acc" aria-expanded="${isOpen}"><span class="acc-i">${icon || "📊"}</span><span class="acc-t"><b>${title}</b>${sub ? `<small>${sub}</small>` : ""}</span><span class="acc-chev" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span></button>
     <div class="acc-b"><div class="acc-in"><div class="acc-pad">${body}</div></div></div></section>`;
 }
-function shotBody(shots) {
+function shotBody(shots, baseTid) {
   if (!shots.length) return "";
-  return `<div class="small muted" style="text-align:center"><span class="lg-in">●</span> נכנסה · <span class="lg-out">✕</span> החטאה · ${shots.length} זריקות</div><div class="court-wrap">${courtSvg(shots)}</div>${zoneTable(shots)}`;
+  const v = ui.shotView === "dots" ? "dots" : "hot";
+  const tabs = `<div class="tabs" style="justify-content:center;margin-bottom:6px"><button class="${v === "hot" ? "on" : ""}" data-act="shotView" data-v="hot">🔥 אזורים חמים</button><button class="${v === "dots" ? "on" : ""}" data-act="shotView" data-v="dots">● כל הזריקות</button></div>`;
+  if (v === "hot") return `${tabs}<div class="court-wrap">${hotZonesSvg(shots, baseTid)}</div>${hzLegend}${hotZonesTable(shots, baseTid)}
+    <p class="small dim" style="margin:8px 0 0">${baseTid ? `חם = קולע יותר טוב מהממוצע של ${esc(team(baseTid)?.name || "הקבוצה")} באותו אזור, קר = פחות טוב.` : "חם = קולעים יותר טוב מהממוצע המקובל באזור הזה, קר = פחות טוב."} ${shots.length} זריקות עם מיקום.</p>`;
+  return `${tabs}<div class="small muted" style="text-align:center"><span class="lg-in">●</span> נכנסה · <span class="lg-out">✕</span> החטאה · ${shots.length} זריקות</div><div class="court-wrap">${courtSvg(shots)}</div>${zoneTable(shots)}`;
 }
 function shotCard(shots, title = "מפת זריקות") {
   if (!shots.length) return "";
@@ -1169,7 +1283,7 @@ function pageTeam(id) {
   <div class="accs sec">
   ${acc("tm-players", "שחקנים", sTable("team-" + id, pruneCols(playerCols(false), rows), rows, "pts"), { sub:"ממוצעים למשחק · לחץ על כותרת למיון", open:true, icon:"👥" })}
   ${full ? (() => { const ta = aggRows(teamRows(id)); const tbl = shootingTable(ta, false); return acc("tm-shoot", "קליעות של הקבוצה", tbl ? `${tbl}<div style="margin-top:12px">${ptsFromBar(ta)}</div>` : "", { sub:"נכנסו, הוחטאו ואחוזים", icon:"🏀" }); })() : ""}
-  ${full ? acc("tm-shots", "מפת זריקות", shotBody(shotsFor({ tid: id })), { icon:"🎯" }) : ""}
+  ${full ? acc("tm-shots", "🔥 אזורים חמים ומפת זריקות", shotBody(shotsFor({ tid: id })), { icon:"🎯" }) : ""}
   ${id === myTeamId() ? `<a class="btn pri" href="#/myteam" style="margin-top:4px">⭐ לכל הסטטיסטיקה של הקבוצה</a>` : ""}
   ${acc("tm-games", "משחקים", `<div class="grid g3">${gs.map(gameCard).join("") || `<div class="card pad muted">אין משחקים</div>`}</div>`, { sub:`${gs.length} משחקים`, open:true, icon:"📅" })}
   </div>`;
@@ -1244,7 +1358,7 @@ function pagePlayer(id) {
   ${acc("pl-trend", "לאורך העונה", trendHtml, { sub:"גרף משחק אחרי משחק", open:true, icon:"📈" })}
   ${acc("pl-form", "כושר נוכחי", formHtml, { sub:"5 המשחקים האחרונים מול כל העונה", icon:"🔥" })}
   ${acc("pl-highs", "שיאים אישיים", highsHtml, { sub:"הכי טוב במשחק אחד", icon:"🏆" })}
-  ${acc("pl-shots", "מפת זריקות", a.ptsOnly ? "" : shotBody(shotsFor({ pid: id })), { sub:"מאיפה זורק ומאיפה קולע", icon:"🎯" })}
+  ${acc("pl-shots", "🔥 אזורים חמים ומפת זריקות", a.ptsOnly ? "" : shotBody(shotsFor({ pid: id }), p.teamId), { sub:"מאיפה הוא קולע הכי טוב", open:true, icon:"🎯" })}
   ${acc("pl-log", "יומן משחקים", logHtml, { sub:"לחץ על משחק לכרטיס מלא", open:true, icon:"📅" })}
   </div>`;
 }
@@ -1404,7 +1518,7 @@ function pageMyTeam() {
     ${acc("st-share", "מי קלע את הנקודות", shareHtml, { sub:"חלוקת הנקודות בקבוצה", icon:"🥧" })}
     ${acc("st-shoot", "קליעות הקבוצה", shootHtml, { sub:"נכנסו, הוחטאו ואחוזים", icon:"🏀" })}
     ${acc("st-highs", "שיאי הקבוצה", th ? `<div class="grid g3">${th}</div>` : "", { sub:"הכי טוב במשחק אחד", icon:"🏆" })}
-    ${acc("st-shots", "מפת זריקות של הקבוצה", shotBody(shotsFor({ tid: mid })), { sub:"מאיפה זורקים ומאיפה קולעים", icon:"🎯" })}
+    ${acc("st-shots", "🔥 אזורים חמים ומפת זריקות", shotBody(shotsFor({ tid: mid })), { sub:"מאיפה הקבוצה קולעת הכי טוב", open:true, icon:"🎯" })}
     ${acc("st-games", "המשחקים שלנו", gs.length ? `<div class="grid g3">${gs.map(gameCard).join("")}</div>` : "", { sub:`${gs.length} משחקים`, icon:"📅" })}
   </div>`;
 }
@@ -1586,10 +1700,13 @@ function gridEditor(g, tid) {
   const cols = ui.cols.filter(k => SL[k]);
   const ps = roster(tid);
   const T = teamTotals(g, tid);
-  const presets = [["בסיסי",["pts","pf"]],["רגיל",["pts","reb","ast","stl","blk","tov","pf"]],["מלא",["min","pts","fg2m","fg2a","fg3m","fg3a","ftm","fta","oreb","dreb","ast","stl","blk","tov","pf"]]];
-  return `<div class="small muted">אילו נתונים להזין? (תבחר רק מה שיש לך)</div>
-  <div class="colpick">${presets.map(([l, ks]) => `<button data-act="preset" data-v="${ks.join(",")}">${l}</button>`).join("")}<span style="width:8px"></span>
-    ${STATS.map(s => `<button class="${cols.includes(s.k) ? "on" : ""}" data-act="togCol" data-k="${s.k}" title="${s.l}">${s.s}</button>`).join("")}</div>
+  const presets = [["בסיס", "נקודות, שלשות, קליעות 2, עונשין", ["pts","fg3m","fg2m","ftm"]],
+    ["מלא", "הכול + ריבאונד הגנה, התקפה וכללי", ["min","pts","fg3m","fg3a","fg2m","fg2a","ftm","fta","dreb","oreb","reb","ast","stl","blk","tov","pf"]]];
+  const cur = cols.join(",");
+  return `<div class="preset-row">${presets.map(([l, d, ks]) => `<button class="preset ${cur === ks.join(",") ? "on" : ""}" data-act="preset" data-v="${ks.join(",")}"><b>${l}</b><small>${d}</small></button>`).join("")}</div>
+  <details class="more-cols"><summary class="small muted">בחירה ידנית של עמודות</summary>
+  <div class="colpick">
+    ${STATS.map(s => `<button class="${cols.includes(s.k) ? "on" : ""}" data-act="togCol" data-k="${s.k}" title="${s.l}">${s.s}</button>`).join("")}</div></details>
   ${ps.length ? `<div class="tbl-wrap bx"><table><thead><tr><th>שיחק</th><th class="l sticky-col">שחקן</th>${cols.map(k => `<th title="${SL[k].l}">${SL[k].s}</th>`).join("")}</tr></thead><tbody>
   ${ps.map(p => { const r = g.box[p.id]; return `<tr class="${r ? "" : "off"}" data-row="${p.id}"><td><input type="checkbox" data-played="${p.id}" ${r ? "checked" : ""} style="width:20px;height:20px"></td>
     <td class="l sticky-col"><span class="dim">${esc(p.number ?? "")}</span> ${esc(p.name)}</td>
@@ -1598,18 +1715,14 @@ function gridEditor(g, tid) {
   <form class="toolbar" data-form="quickPlayer" data-team="${tid}" style="margin-top:12px">
     <input class="inp" name="number" placeholder="מס'" inputmode="numeric" style="width:72px"><input class="inp" name="name" placeholder="שם שחקן חדש" required style="flex:1;min-width:140px">
     <button class="btn">+ הוסף שחקן לקבוצה</button></form>
-  <p class="small muted">אפשר להשאיר תאים ריקים. נקודות וריבאונדים מחושבים לבד מהקליעות/ריבאונדים אם לא הוזנו ישירות.</p>`;
+  <p class="small muted">אפשר להשאיר תאים ריקים. אם תמלא שלשות, קליעות 2 ועונשין – הנקודות מחושבות לבד (המספר האפור). ריבאונד כללי מחושב לבד מהגנה + התקפה.</p>`;
 }
 const TAP = [
-  { id:"p1", l:"+1 נק'", c:"g", f:r => setPts(r, 1) }, { id:"p2", l:"+2 נק'", c:"g", f:r => setPts(r, 2) }, { id:"p3", l:"+3 נק'", c:"g", f:r => setPts(r, 3) },
-  { id:"2m", l:"קליעה 2 ✓", c:"g", f:r => { inc(r, "fg2m"); inc(r, "fg2a"); bump(r, "pts", 2); } },
-  { id:"2x", l:"החטאה 2 ✗", c:"r", f:r => inc(r, "fg2a") },
-  { id:"3m", l:"קליעה 3 ✓", c:"g", f:r => { inc(r, "fg3m"); inc(r, "fg3a"); bump(r, "pts", 3); } },
-  { id:"3x", l:"החטאה 3 ✗", c:"r", f:r => inc(r, "fg3a") },
   { id:"fm", l:"עונשין ✓", c:"g", f:r => { inc(r, "ftm"); inc(r, "fta"); bump(r, "pts", 1); } },
   { id:"fx", l:"עונשין ✗", c:"r", f:r => inc(r, "fta") },
-  { id:"or", l:"ריב' התקפה", f:r => { inc(r, "oreb"); bump(r, "reb", 1); } },
   { id:"dr", l:"ריב' הגנה", f:r => { inc(r, "dreb"); bump(r, "reb", 1); } },
+  { id:"or", l:"ריב' התקפה", f:r => { inc(r, "oreb"); bump(r, "reb", 1); } },
+  { id:"rb", l:"ריבאונד (כללי)", f:r => { r.reb = (val(r, "reb") || 0) + 1; } },
   { id:"as", l:"אסיסט", f:r => inc(r, "ast") }, { id:"st", l:"חטיפה", f:r => inc(r, "stl") },
   { id:"bl", l:"חסימה", f:r => inc(r, "blk") }, { id:"to", l:"איבוד", c:"r", f:r => inc(r, "tov") },
   { id:"pf", l:"עבירה", c:"r", f:r => inc(r, "pf") },
@@ -1632,7 +1745,7 @@ function tapEditor(g, tid) {
         <div class="court-wrap">${courtSvg(sh, { interactive: true, pending: pend })}</div>
         ${pend ? `<div class="shot-pick"><div class="seg"><button class="${!pend.three ? "on" : ""}" data-act="pendPts" data-v="2">2 נק'</button><button class="${pend.three ? "on" : ""}" data-act="pendPts" data-v="3">3 נק'</button></div>
           <button class="act g" data-act="shotRes" data-v="1">✓ נכנסה</button><button class="act r" data-act="shotRes" data-v="0">✗ החטאה</button><button class="btn sm" data-act="shotCancel">ביטול</button></div>`
-          : `<div class="small dim" style="text-align:center">אפשר גם לרשום זריקות בכפתורים למטה, בלי מיקום</div>`}</div>`;
+          : `<div class="small dim" style="text-align:center">זריקות של 2 ו-3 – לוחצים על המגרש. עונשין וכל השאר – בכפתורים למטה.</div>`}</div>`;
     })()}
     <div class="act-grid">${TAP.map(a => `<button class="act ${a.c || ""}" data-act="tap" data-a="${a.id}" ${sp ? "" : "disabled style='opacity:.45'"}>${a.l}</button>`).join("")}</div>
     <div class="card pad"><div class="split"><b class="small">${sp ? `נבחר: #${esc(sp.number ?? "")} ${esc(sp.name)}` : "לא נבחר שחקן"}</b><button class="btn sm" data-act="undo" ${tapLog.length ? "" : "disabled"}>↶ בטל אחרון</button></div>
@@ -1783,6 +1896,7 @@ const ACT = {
   },
   pgame(el) { openPlayerGame(el.dataset.g, el.dataset.p); },
   bsort(el) { const s = sortState[el.dataset.key]; if (s.t === el.dataset.t) s.d *= -1; else { s.t = el.dataset.t; s.d = -1; } render(true); },
+  shotView(el) { ui.shotView = el.dataset.v; saveUi(); render(true); },
   mtview(el) { ui.mtview = el.dataset.v; saveUi(); render(true); },
   pview(el) { ui.pview = el.dataset.v; saveUi(); render(true); },
   trend(el) { ui.trend = el.dataset.v; saveUi(); render(true); },
