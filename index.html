@@ -1177,7 +1177,7 @@ function boxCols(rows, T, full = true) {
     if (has(r => isN(r.oreb))) cols.push({ l:"ריב' הת'", title:"ריבאונד התקפה", f:x => x.r.oreb ?? "—", v:x => x.r.oreb, t:"oreb" });
     if (has(r => isN(r.dreb))) cols.push({ l:"ריב' הג'", title:"ריבאונד הגנה", f:x => x.r.dreb ?? "—", v:x => x.r.dreb, t:"dreb" });
   }
-  for (const k of full ? ["reb","ast","stl","blk","tov"] : ["reb","ast"]) if (has(r => isN(val(r, k)))) cols.push({ l:SL[k].s, title:SL[k].l, f:x => val(x.r, k) ?? "—", v:x => val(x.r, k), t:k, noBest: k === "tov" });
+  for (const k of ["reb","ast","stl","blk","tov"]) if (has(r => isN(val(r, k)))) cols.push({ l:SL[k].s, title:SL[k].l, f:x => val(x.r, k) ?? "—", v:x => val(x.r, k), t:k, noBest: k === "tov" });
   if (full) for (const q of QS) if (has(r => isN(r[q]))) cols.push({ l:SL[q].s, title:SL[q].l, f:x => x.r[q] ?? "—", v:x => x.r[q], t:q });
   if (has(r => isN(r.pm))) cols.push({ l:"+/-", title:SL.pm.l, f:x => isN(x.r.pm) ? `<span class="${x.r.pm > 0 ? "pos" : x.r.pm < 0 ? "neg" : ""}">${sg(x.r.pm, 0)}</span>` : "—", v:x => x.r.pm, t:"pm" });
   if (full) {
@@ -1368,6 +1368,9 @@ function basicCols(withTeam) {
     { k:"pts", l:"נק'", title:"נקודות למשחק", fmt:x => `<b>${f1(x.a.avg.pts)}</b>`, val:x => x.a.avg.pts },
     { k:"reb", l:"ריב'", title:"ריבאונדים למשחק", fmt:x => f1(x.a.avg.reb), val:x => x.a.avg.reb },
     { k:"ast", l:"אס'", title:"אסיסטים למשחק", fmt:x => f1(x.a.avg.ast), val:x => x.a.avg.ast },
+    { k:"stl", l:"חט'", title:"חטיפות למשחק", fmt:x => f1(x.a.avg.stl), val:x => x.a.avg.stl },
+    { k:"blk", l:"חס'", title:"חסימות (בלוקים) למשחק", fmt:x => f1(x.a.avg.blk), val:x => x.a.avg.blk },
+    { k:"tov", l:"איב'", title:"איבודים למשחק", fmt:x => f1(x.a.avg.tov), val:x => x.a.avg.tov },
     pc("fg3p", "% 3", "fg3m", "fg3a", "אחוז מ-3"), pc("fg2p", "% 2", "fg2m", "fg2a", "אחוז מ-2"), pc("ftp", "% עונשין", "ftm", "fta", "אחוז עונשין"),
   ];
 }
@@ -1538,7 +1541,7 @@ function pagePlayers(q) {
       : v === "basic" ? sTable("players-b", pruneCols(basicCols(true), shown), shown, "pts")
       : sTable("players", pruneCols(playerCols(true), shown), shown, "pts")) : `<div class="card empty">אין נתונים להצגה</div>`;
   }
-  const note = { pts:"כל שחקני הליגה לפי נקודות למשחק. השורות הצבעוניות – הקבוצה שלך.", basic:"הכי פשוט: נקודות, ריבאונדים ואסיסטים למשחק, ואחוזים מ-3, מ-2 ומהעונשין (בקטן – נכנסו/ניסיונות).", avg:"ממוצע למשחק, רק מהמשחקים שבהם הנתון הוזן.", shoot:"קל' = נכנסו, נס' = ניסיונות, הוח' = הוחטאו.", tot:"סיכום של כל העונה – כל הנתונים. בקליעות: נכנסו/ניסיונות." }[v]
+  const note = { pts:"כל שחקני הליגה לפי נקודות למשחק. השורות הצבעוניות – הקבוצה שלך.", basic:"הכי פשוט: נקודות, ריבאונדים, אסיסטים, חטיפות, חסימות ואיבודים למשחק, ואחוזים מ-3, מ-2 ומהעונשין (בקטן – נכנסו/ניסיונות).", avg:"ממוצע למשחק, רק מהמשחקים שבהם הנתון הוזן.", shoot:"קל' = נכנסו, נס' = ניסיונות, הוח' = הוחטאו.", tot:"סיכום של כל העונה – כל הנתונים. בקליעות: נכנסו/ניסיונות." }[v]
     + (v !== "pts" && others ? ` לקבוצות אחרות יש רק נקודות – לכן כאן מופיעים רק השחקנים של ${esc(team(mid)?.name || "הקבוצה שלך")}.` : "");
   return `<h1>שחקנים</h1>
   <div class="tabs big-tabs">${[["pts","🔥 נקודות"],["basic","✅ בסיסי"],["avg","📊 כל הנתונים"],["shoot","🎯 קליעות"],["tot","Σ סה\"כ עונה"]].map(([k, l]) => `<button class="${v === k ? "on" : ""}" data-act="pview" data-v="${k}">${l}</button>`).join("")}</div>
