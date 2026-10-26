@@ -874,7 +874,7 @@ function readImage(file, size = 192) {
 const logoInput = (name = "logo") => `<label class="btn sm">🖼️ בחר תמונה<input type="file" accept="image/*" name="${name}" hidden data-preview></label>`;
 function badge(t, opts = {}) {
   if (!t) return `<span class="tb"><span class="dot" style="background:#555">?</span><span class="nm">קבוצה נמחקה</span></span>`;
-  const inner = `${okImg(t.logo) ? `<span class="dot logo"><img src="${t.logo}" alt=""></span>` : `<span class="dot" style="background:${esc(t.color || "#ff7a1a")}">${initials(t)}</span>`}${opts.noName ? "" : `<span class="nm" title="${esc(t.name)}">${esc(tns(t))}</span>`}`;
+  const inner = `${okImg(t.logo) ? `<span class="dot logo"><img src="${t.logo}" alt=""></span>` : `<span class="dot" style="background:${esc(t.color || "#ff7a1a")}">${initials(t)}</span>`}${opts.noName ? "" : `<span class="nm" title="${esc(t.name)}">${esc(opts.full ? t.name : tns(t))}</span>`}`;
   return opts.link === false ? `<span class="tb ${opts.lg ? "lg" : ""}">${inner}</span>` : `<a class="tb ${opts.lg ? "lg" : ""}" href="#/team/${t.id}">${inner}</a>`;
 }
 function plink(p, cls = "") { return p ? `<a class="${cls}" href="#/player/${p.id}">${esc(p.name)}</a>` : "—"; }
@@ -1285,7 +1285,7 @@ function pageHome() {
   const nextMy = MT && games.find(g => !isFinal(g) && (g.homeId === mid || g.awayId === mid));
   const myCard = MT && MS ? `<a class="card pad my-card" href="#/myteam" style="--tc:${esc(MT.color)}">
       <div class="split"><span class="small muted">הקבוצה שלי</span><span class="small more">לכל הסטטיסטיקה ←</span></div>
-      <div class="my-head" style="margin-top:8px">${badge(MT, { lg:true, noName:true, link:false })}<div style="flex:1;min-width:0"><b style="font-size:18px">${esc(tn(MT))}</b>
+      <div class="my-head" style="margin-top:8px">${badge(MT, { lg:true, noName:true, link:false })}<div style="flex:1;min-width:0"><b style="font-size:18px">${esc(MT.name)}</b>
         <div class="small muted">מקום ${MS.rank} · ${MS.w}-${MS.l} · ${f1(MS.ppg)} נק' למשחק</div></div>${formDots(MS.last5)}</div>
       <div class="kpis" style="margin-top:10px">${mvpP ? `<div class="kpi"><b>${f1(mvpP.a.avg.pts)}</b><span>הקלע המוביל: ${esc(mvpP.p.name)}</span></div>` : ""}
         ${nextMy ? `<div class="kpi"><b style="font-size:16px">${esc(fmtDate(nextMy.date))}</b><span>המשחק הבא נגד ${esc(tn(team(nextMy.homeId === mid ? nextMy.awayId : nextMy.homeId)) || "")}</span></div>` : ""}</div></a>` : "";
@@ -1476,9 +1476,9 @@ function pageGame(id) {
   <div class="card">
     <div class="pad split small muted" style="padding-bottom:0"><span>${g.round ? `מחזור ${esc(g.round)} · ` : ""}${fmtDate(g.date)}${g.time ? " · " + esc(g.time) : ""}${g.venue ? " · " + esc(g.venue) : ""}</span>${statusChip(g)}</div>
     <div class="sb">
-      <div class="tm">${badge(H, { lg:true, noName:true })}<b>${H ? `<a href="#/team/${H.id}">${esc(tn(H))}</a>` : "—"}</b><span class="small muted">בית</span></div>
+      <div class="tm">${badge(H, { lg:true, noName:true })}<b>${H ? `<a href="#/team/${H.id}">${esc(H.name)}</a>` : "—"}</b><span class="small muted">בית</span></div>
       <div class="score">${isN(g.homeScore) || isN(g.awayScore) ? `<span class="${!fin || hw ? "w" : "l"}">${g.homeScore ?? "-"}</span><em>:</em><span class="${!fin || !hw ? "w" : "l"}">${g.awayScore ?? "-"}</span>` : `<em>VS</em>`}</div>
-      <div class="tm">${badge(A, { lg:true, noName:true })}<b>${A ? `<a href="#/team/${A.id}">${esc(tn(A))}</a>` : "—"}</b><span class="small muted">חוץ</span></div>
+      <div class="tm">${badge(A, { lg:true, noName:true })}<b>${A ? `<a href="#/team/${A.id}">${esc(A.name)}</a>` : "—"}</b><span class="small muted">חוץ</span></div>
     </div>
     ${top(g.homeId) || top(g.awayId) ? `<div class="pad split small" style="border-top:1px solid var(--line)"><span>${top(g.homeId) || "—"}</span><span>${top(g.awayId) || "—"}</span></div>` : ""}
   </div>
@@ -1626,7 +1626,7 @@ function pageTeam(id) {
   return `
   <div class="hero" style="border-color:${esc(t.color)}55">
     <div class="split"><div style="display:flex;gap:14px;align-items:center">${badge(t, { lg:true, noName:true, link:false })}
-      <div><h1 style="margin:0">${esc(tn(t))}</h1><div class="muted">מקום ${s.rank} · ${s.w}-${s.l} · ${s.lp} נק'</div></div></div>
+      <div><h1 style="margin:0">${esc(t.name)}</h1><div class="muted">מקום ${s.rank} · ${s.w}-${s.l} · ${s.lp} נק'</div></div></div>
       ${formDots(s.last5)}</div>
     <div class="kpis">
       <div class="kpi"><b>${f1(s.ppg)}</b><span>נק' זכות למשחק</span></div>
@@ -1711,7 +1711,7 @@ function pagePlayer(id) {
   <div class="hero" style="${t ? `border-color:${esc(t.color)}55` : ""}">
     <div style="display:flex;gap:14px;align-items:center">
       <div class="jn" style="width:64px;height:64px;border-radius:18px;font-size:26px;background:${esc(t?.color || "var(--card2)")};color:#fff">${esc(p.number ?? "")}</div>
-      <div><h1 style="margin:0">${esc(p.name)}</h1><div class="muted">${t ? badge(t) : ""}${a.manual ? ` <span class="badge">ממוצעים ידניים</span>` : ""}</div></div>
+      <div><h1 style="margin:0">${esc(p.name)}</h1><div class="muted">${t ? badge(t, { full:true }) : ""}${a.manual ? ` <span class="badge">ממוצעים ידניים</span>` : ""}</div></div>
     </div>
   </div>
   <div class="grid g4 sec">${tiles}</div>
@@ -1891,7 +1891,7 @@ function pageMyTeam() {
   return `${pickTeam}
   <div class="hero my-hero" style="--tc:${esc(T?.color || "#ff7a1a")}">
     <div class="my-head">${T ? badge(T, { lg:true, noName:true, link:false }) : ""}
-      <div style="flex:1;min-width:0"><div class="small muted">הקבוצה שלי</div><h1 style="margin:0">${esc(tn(T) || "")}</h1>
+      <div style="flex:1;min-width:0"><div class="small muted">הקבוצה שלי</div><h1 style="margin:0">${esc(T?.name || "")}</h1>
       ${S ? `<div class="muted">מקום ${S.rank} מתוך ${st.length} · ${S.w}-${S.l} · ${S.lp} נק' בטבלה</div>` : ""}</div>
       ${S ? formDots(S.last5) : ""}</div>
   </div>
