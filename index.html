@@ -466,6 +466,15 @@ tr.mine td.sticky-col{background:color-mix(in srgb,var(--text) 5%,var(--card));b
 .src-note{margin-top:28px;padding-top:12px;border-top:1px solid var(--line);color:var(--dim);font-size:11px;line-height:1.5;text-align:center}
 .src-note p{margin:0 0 4px}
 
+/* בטבלאות בטלפון: שמות ארוכים מתקצרים (…) כדי שיישאר מקום לנתונים */
+@media(max-width:640px){
+  td .tb{flex-wrap:nowrap;max-width:40vw}
+  td .tb .nm{display:block;min-width:0;max-width:calc(40vw - 36px)}
+  td.sticky-col{max-width:44vw}
+  td.sticky-col > a:not(.tb), td.sticky-col .pn{max-width:36vw}
+  td.sticky-col > a:not(.tb), td.sticky-col .pn{display:inline-block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
+}
+
 </style>
 </head>
 <body>
@@ -542,6 +551,16 @@ const f1 = (v) => nd(v, 1);
 const fp = (v) => isN(v) ? nd(v * 100, 1) + "%" : "—";
 const sum = (a) => a.reduce((x, y) => x + y, 0);
 const team = (id) => DB.teams.find(t => t.id === id);
+// שם קבוצה לתצוגה: בלי "מחוזית ילדים א שומרון" (שם הליגה) שמופיע בסוף השם – כדי שיישאר מקום לנתונים
+function tn(t) {
+  if (!t) return "";
+  let n = String(t.name || "").replace(/\s+/g, " ").trim();
+  const lg = String(DB.league?.name || "").replace(/\s+/g, " ").trim();
+  if (lg && n.length > lg.length + 2 && n.endsWith(lg)) n = n.slice(0, -lg.length).trim();
+  return n.replace(/\s+מחוזית ילדים [א-ת]'?\s*\S*$/, "").trim() || t.name;
+}
+// עוד יותר קצר (לטבלאות ותגיות): בלי "הפועל"/"מכבי" בהתחלה
+const tns = (t) => tn(t).replace(/^(הפועל|מכבי|בית"ר|בני|עירוני)\s+/, "") || tn(t);
 const player = (id) => DB.players.find(p => p.id === id);
 const game = (id) => DB.games.find(g => g.id === id);
 const roster = (tid) => DB.players.filter(p => p.teamId === tid).sort((a, b) => (+a.number || 999) - (+b.number || 999) || a.name.localeCompare(b.name, "he"));
@@ -775,7 +794,7 @@ function standings() {
     x.ppg = x.gp ? x.pf / x.gp : undefined; x.oppg = x.gp ? x.pa / x.gp : undefined;
     return x;
   });
-  rows.sort((a, b) => b.lp - a.lp || b.pct - a.pct || ((b.h2h[a.t.id] || 0) - (a.h2h[b.t.id] || 0)) || b.diff - a.diff || b.pf - a.pf || a.t.name.localeCompare(b.t.name, "he"));
+  rows.sort((a, b) => b.lp - a.lp || b.pct - a.pct || ((b.h2h[a.t.id] || 0) - (a.h2h[b.t.id] || 0)) || b.diff - a.diff || b.pf - a.pf || tn(a.t).localeCompare(tn(b.t), "he"));
   rows.forEach((r, i) => r.rank = i + 1);
   return rows;
 }
@@ -831,7 +850,7 @@ function gameHighs(k, limit = 5, ids = null) {
 }
 
 /* ================= רכיבי תצוגה ================= */
-function initials(t) { return esc((t.short || t.name || "?").slice(0, 3)); }
+function initials(t) { return esc((t.short || tn(t) || "?").slice(0, 3)); }
 /* לוגו: מקטינים כל תמונה ל-192 פיקסלים ושומרים אותה בתוך הנתונים */
 const okImg = (v) => typeof v === "string" && v.length < 400000 && /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(v);
 function readImage(file, size = 192) {
@@ -855,7 +874,7 @@ function readImage(file, size = 192) {
 const logoInput = (name = "logo") => `<label class="btn sm">🖼️ בחר תמונה<input type="file" accept="image/*" name="${name}" hidden data-preview></label>`;
 function badge(t, opts = {}) {
   if (!t) return `<span class="tb"><span class="dot" style="background:#555">?</span><span class="nm">קבוצה נמחקה</span></span>`;
-  const inner = `${okImg(t.logo) ? `<span class="dot logo"><img src="${t.logo}" alt=""></span>` : `<span class="dot" style="background:${esc(t.color || "#ff7a1a")}">${initials(t)}</span>`}${opts.noName ? "" : `<span class="nm">${esc(t.name)}</span>`}`;
+  const inner = `${okImg(t.logo) ? `<span class="dot logo"><img src="${t.logo}" alt=""></span>` : `<span class="dot" style="background:${esc(t.color || "#ff7a1a")}">${initials(t)}</span>`}${opts.noName ? "" : `<span class="nm" title="${esc(t.name)}">${esc(tns(t))}</span>`}`;
   return opts.link === false ? `<span class="tb ${opts.lg ? "lg" : ""}">${inner}</span>` : `<a class="tb ${opts.lg ? "lg" : ""}" href="#/team/${t.id}">${inner}</a>`;
 }
 function plink(p, cls = "") { return p ? `<a class="${cls}" href="#/player/${p.id}">${esc(p.name)}</a>` : "—"; }
@@ -1038,7 +1057,7 @@ function shotBody(shots, baseTid) {
   const v = ui.shotView === "dots" ? "dots" : "hot";
   const tabs = `<div class="tabs" style="justify-content:center;margin-bottom:6px"><button class="${v === "hot" ? "on" : ""}" data-act="shotView" data-v="hot">אזורים חמים</button><button class="${v === "dots" ? "on" : ""}" data-act="shotView" data-v="dots">● כל הזריקות</button></div>`;
   if (v === "hot") return `${tabs}<div class="court-wrap">${hotZonesSvg(shots, baseTid)}</div>${hzLegend}${hotZonesTable(shots, baseTid)}
-    <p class="small dim" style="margin:8px 0 0">${baseTid ? `חם = קולע יותר טוב מהממוצע של ${esc(team(baseTid)?.name || "הקבוצה")} באותו אזור, קר = פחות טוב.` : "חם = קולעים יותר טוב מהממוצע המקובל באזור הזה, קר = פחות טוב."} ${shots.length} זריקות עם מיקום.</p>`;
+    <p class="small dim" style="margin:8px 0 0">${baseTid ? `חם = קולע יותר טוב מהממוצע של ${esc(tn(team(baseTid)) || "הקבוצה")} באותו אזור, קר = פחות טוב.` : "חם = קולעים יותר טוב מהממוצע המקובל באזור הזה, קר = פחות טוב."} ${shots.length} זריקות עם מיקום.</p>`;
   return `${tabs}<div class="small muted" style="text-align:center"><span class="lg-in">●</span> נכנסה · <span class="lg-out">✕</span> החטאה · ${shots.length} זריקות</div><div class="court-wrap">${courtSvg(shots)}</div>${zoneTable(shots)}`;
 }
 function shotCard(shots, title = "מפת זריקות") {
@@ -1163,9 +1182,9 @@ function teamStatsEditor(g) {
   const sides = [["home", g.homeId], ["away", g.awayId]].map(([side, tid]) => ({ side, tid, t: team(tid) })).filter(x => x.t);
   const line = (x) => { const q = QS.map(k => tsGet(g, x.tid, k)); if (!q.some(isN)) return "";
     const qs = sum(q.filter(isN)) + (tsGet(g, x.tid, "ot") || 0), sc = g[x.side + "Score"];
-    return `<div class="small ${qs === sc ? "pos" : ""}" style="margin-top:4px">${esc(x.t.name)}: סכום הרבעים ${qs} · תוצאה ${sc ?? "—"} ${qs === sc ? "✓" : `<button class="btn sm" data-act="tsSync" data-side="${x.side}" data-v="${qs}">עדכן תוצאה ל-${qs}</button>`}</div>`; };
+    return `<div class="small ${qs === sc ? "pos" : ""}" style="margin-top:4px">${esc(tn(x.t))}: סכום הרבעים ${qs} · תוצאה ${sc ?? "—"} ${qs === sc ? "✓" : `<button class="btn sm" data-act="tsSync" data-side="${x.side}" data-v="${qs}">עדכן תוצאה ל-${qs}</button>`}</div>`; };
   return `<div class="tbl-wrap bx"><table><thead><tr><th class="l sticky-col">קבוצה</th>${TS_FIELDS.map(([k, l]) => `<th>${l}</th>`).join("")}</tr></thead><tbody>
-    ${sides.map(x => `<tr><td class="l sticky-col">${esc(x.t.name)}</td>${TS_FIELDS.map(([k]) => `<td><input type="number" min="0" inputmode="numeric" data-ts="${x.tid}|${k}" value="${tsGet(g, x.tid, k) ?? ""}"></td>`).join("")}</tr>`).join("")}
+    ${sides.map(x => `<tr><td class="l sticky-col">${esc(tn(x.t))}</td>${TS_FIELDS.map(([k]) => `<td><input type="number" min="0" inputmode="numeric" data-ts="${x.tid}|${k}" value="${tsGet(g, x.tid, k) ?? ""}"></td>`).join("")}</tr>`).join("")}
   </tbody></table></div><div id="tsLines">${sides.map(line).join("")}</div>
   <p class="small muted">כמו בדף המשחק של האיגוד: נקודות בכל רבע, ומספר השלשות, הקליעות של 2, העונשין והעבירות של כל קבוצה. ריק = לא ידוע.</p>`;
 }
@@ -1237,7 +1256,7 @@ function leaderCard(cat, minG, limit = 5, list, scope = "") {
   return `<div class="card pad ld ${scope ? "ld-click" : ""}" ${click}><h3><span>${cat.l}</span>${scope ? `<small class="ld-more">הכל ←</small>` : ""}</h3><ol>${ls.map(x => {
     const t = team(x.p.teamId);
     return `<li><span class="jn" style="${t ? `box-shadow:inset 0 -3px 0 ${esc(t.color)}` : ""}">${esc(x.p.number ?? "")}</span>
-      <span class="who"><b>${plink(x.p)}</b><small>${esc(t?.name || "")}</small></span>
+      <span class="who"><b>${plink(x.p)}</b><small>${esc(tn(t) || "")}</small></span>
       <span class="v">${ldVal(cat, x.v)}</span></li>`;
   }).join("")}</ol></div>`;
 }
@@ -1248,7 +1267,7 @@ function leaderFull(k, scope, minG) {
   const ls = leaders(cat, minG, list, Infinity);
   const nOf = (x) => ({ rate: x.a.n.rate, eff: x.a.n.eff }[k] ?? x.a.n[k] ?? x.a.gp);
   modal(`<div class="split" style="margin-bottom:8px"><h2 style="margin:0">${cat.l}</h2><button class="iconbtn" data-close="" aria-label="סגירה">✕</button></div>
-    <p class="small muted" style="margin:0 0 10px">${scope === "team" ? esc(team(mid)?.name || "הקבוצה שלי") : "כל הליגה"} · מ-1 עד האחרון${minG > 1 ? ` · מינימום ${minG} משחקים` : ""}</p>
+    <p class="small muted" style="margin:0 0 10px">${scope === "team" ? esc(tn(team(mid)) || "הקבוצה שלי") : "כל הליגה"} · מ-1 עד האחרון${minG > 1 ? ` · מינימום ${minG} משחקים` : ""}</p>
     ${ls.length ? `<div class="tbl-wrap"><table><thead><tr><th>#</th><th class="l">שחקן</th>${scope === "team" ? "" : `<th class="l">קבוצה</th>`}<th>מש'</th><th>${esc(cat.l)}</th></tr></thead><tbody>
       ${ls.map((x, i) => `<tr class="${x.p.teamId === mid && scope !== "team" ? "mine" : ""}"><td><span class="rk ${i < 3 ? "top" : ""}">${i + 1}</span></td><td class="l"><span class="dim">${esc(x.p.number ?? "")}</span> <a href="#/player/${x.p.id}" data-close="">${esc(x.p.name)}</a></td>${scope === "team" ? "" : `<td class="l">${badge(team(x.p.teamId), { link:false })}</td>`}<td>${nOf(x) ?? "—"}</td><td><b>${k === "rate" ? rtBadge(Math.round(x.v * 10) / 10) : ldVal(cat, x.v)}</b></td></tr>`).join("")}
     </tbody></table></div>` : `<div class="muted">אין נתונים</div>`}`, (m) => m.classList.add("wide"));
@@ -1266,10 +1285,10 @@ function pageHome() {
   const nextMy = MT && games.find(g => !isFinal(g) && (g.homeId === mid || g.awayId === mid));
   const myCard = MT && MS ? `<a class="card pad my-card" href="#/myteam" style="--tc:${esc(MT.color)}">
       <div class="split"><span class="small muted">הקבוצה שלי</span><span class="small more">לכל הסטטיסטיקה ←</span></div>
-      <div class="my-head" style="margin-top:8px">${badge(MT, { lg:true, noName:true, link:false })}<div style="flex:1;min-width:0"><b style="font-size:18px">${esc(MT.name)}</b>
+      <div class="my-head" style="margin-top:8px">${badge(MT, { lg:true, noName:true, link:false })}<div style="flex:1;min-width:0"><b style="font-size:18px">${esc(tn(MT))}</b>
         <div class="small muted">מקום ${MS.rank} · ${MS.w}-${MS.l} · ${f1(MS.ppg)} נק' למשחק</div></div>${formDots(MS.last5)}</div>
       <div class="kpis" style="margin-top:10px">${mvpP ? `<div class="kpi"><b>${f1(mvpP.a.avg.pts)}</b><span>הקלע המוביל: ${esc(mvpP.p.name)}</span></div>` : ""}
-        ${nextMy ? `<div class="kpi"><b style="font-size:16px">${esc(fmtDate(nextMy.date))}</b><span>המשחק הבא נגד ${esc(team(nextMy.homeId === mid ? nextMy.awayId : nextMy.homeId)?.name || "")}</span></div>` : ""}</div></a>` : "";
+        ${nextMy ? `<div class="kpi"><b style="font-size:16px">${esc(fmtDate(nextMy.date))}</b><span>המשחק הבא נגד ${esc(tn(team(nextMy.homeId === mid ? nextMy.awayId : nextMy.homeId)) || "")}</span></div>` : ""}</div></a>` : "";
   const leadersHtml = leaderCard({ k:"pts", l:"מלכי הסלים בליגה – נקודות למשחק" }, minG, 5);
   return `
   <section class="hero">
@@ -1314,7 +1333,7 @@ function pageGames(q) {
   for (const g of gs) { const k = g.round ? `מחזור ${g.round}` : fmtDate(g.date); if (!groups.has(k)) groups.set(k, []); groups.get(k).push(g); }
   return `<h1>משחקים</h1>
   <div class="toolbar">
-    <select class="inp" style="max-width:220px" data-act="gfilter" data-f="team"><option value="">כל הקבוצות</option>${DB.teams.map(t => `<option value="${t.id}" ${t.id === tf ? "selected" : ""}>${esc(t.name)}</option>`).join("")}</select>
+    <select class="inp" style="max-width:220px" data-act="gfilter" data-f="team"><option value="">כל הקבוצות</option>${DB.teams.map(t => `<option value="${t.id}" ${t.id === tf ? "selected" : ""}>${esc(tn(t))}</option>`).join("")}</select>
     <div class="seg">${[["all","הכול"],["done","שוחקו"],["next","הבאים"]].map(([k, l]) => `<button class="${sf === k ? "on" : ""}" data-act="gfilter" data-f="s" data-v="${k}">${l}</button>`).join("")}</div>
   </div>
   ${[...groups].map(([k, list]) => `<section class="sec"><div class="sec-h"><h2>${esc(k)}</h2><span class="small muted">${list[0].round && list[0].date ? fmtDate(list[0].date) : ""}</span></div><div class="grid g3">${list.map(gameCard).join("")}</div></section>`).join("") || `<div class="card empty">אין משחקים להצגה</div>`}`;
@@ -1430,7 +1449,7 @@ function openPlayerGame(gid, pid) {
     <div class="pg-head">
       <div class="jn" style="width:56px;height:56px;border-radius:16px;font-size:22px;background:${esc(t?.color || "var(--card2)")};color:#fff">${esc(p.number ?? "")}</div>
       <div style="min-width:0;flex:1"><h2 style="margin:0">${esc(p.name)}</h2>
-        <div class="small muted">${esc(t?.name || "")} · ${home ? "נגד" : "@"} ${esc(opp?.name || "—")} · ${esc(fmtDate(g.date))}</div>
+        <div class="small muted">${esc(tn(t) || "")} · ${home ? "נגד" : "@"} ${esc(tn(opp) || "—")} · ${esc(fmtDate(g.date))}</div>
         ${fin ? `<div class="small ${my > ot ? "pos" : "neg"}" style="font-weight:600">${my > ot ? "ניצחון" : "הפסד"} ${my}-${ot}</div>` : ""}</div>
       <button class="iconbtn" data-close="" aria-label="סגירה">✕</button>
     </div>
@@ -1457,9 +1476,9 @@ function pageGame(id) {
   <div class="card">
     <div class="pad split small muted" style="padding-bottom:0"><span>${g.round ? `מחזור ${esc(g.round)} · ` : ""}${fmtDate(g.date)}${g.time ? " · " + esc(g.time) : ""}${g.venue ? " · " + esc(g.venue) : ""}</span>${statusChip(g)}</div>
     <div class="sb">
-      <div class="tm">${badge(H, { lg:true, noName:true })}<b>${H ? `<a href="#/team/${H.id}">${esc(H.name)}</a>` : "—"}</b><span class="small muted">בית</span></div>
+      <div class="tm">${badge(H, { lg:true, noName:true })}<b>${H ? `<a href="#/team/${H.id}">${esc(tn(H))}</a>` : "—"}</b><span class="small muted">בית</span></div>
       <div class="score">${isN(g.homeScore) || isN(g.awayScore) ? `<span class="${!fin || hw ? "w" : "l"}">${g.homeScore ?? "-"}</span><em>:</em><span class="${!fin || !hw ? "w" : "l"}">${g.awayScore ?? "-"}</span>` : `<em>VS</em>`}</div>
-      <div class="tm">${badge(A, { lg:true, noName:true })}<b>${A ? `<a href="#/team/${A.id}">${esc(A.name)}</a>` : "—"}</b><span class="small muted">חוץ</span></div>
+      <div class="tm">${badge(A, { lg:true, noName:true })}<b>${A ? `<a href="#/team/${A.id}">${esc(tn(A))}</a>` : "—"}</b><span class="small muted">חוץ</span></div>
     </div>
     ${top(g.homeId) || top(g.awayId) ? `<div class="pad split small" style="border-top:1px solid var(--line)"><span>${top(g.homeId) || "—"}</span><span>${top(g.awayId) || "—"}</span></div>` : ""}
   </div>
@@ -1476,8 +1495,8 @@ function pageGame(id) {
   <section class="sec"><div class="sec-h"><h2>${badge(A)}</h2>${bq ? `<span class="chip">רבע ${bq}</span>` : ""}</div>${A ? boxTable(g, A.id, bq) : ""}</section>
   ${qs.length ? `<div class="accs">${acc("gm-q", "השוואת רבעים", gameQHtml(g), { sub:"נקודות, ריבאונדים, אסיסטים ועוד – רבע מול רבע", open:true, icon:"⏱️" })}</div>` : ""}`; })()}
   <div class="accs">
-  ${H ? acc("gm-shots-h", "מפת זריקות – " + esc(H.name), shotBody(shotsFor({ gid: g.id, tid: H.id })), { icon:"" }) : ""}
-  ${A ? acc("gm-shots-a", "מפת זריקות – " + esc(A.name), shotBody(shotsFor({ gid: g.id, tid: A.id })), { icon:"" }) : ""}
+  ${H ? acc("gm-shots-h", "מפת זריקות – " + esc(tn(H)), shotBody(shotsFor({ gid: g.id, tid: H.id })), { icon:"" }) : ""}
+  ${A ? acc("gm-shots-a", "מפת זריקות – " + esc(tn(A)), shotBody(shotsFor({ gid: g.id, tid: A.id })), { icon:"" }) : ""}
   </div>
   ${ADMIN_PW ? `<a class="btn" href="#/admin/game/${g.id}">✏️ עריכת המשחק</a>` : ""}`;
 }
@@ -1492,7 +1511,7 @@ function teamCompare(g) {
   pr("אחוז מהשדה", "fgp", "fgm", "fga"); pr("אחוז מ-2", "fg2p", "fg2m", "fg2a"); pr("אחוז מ-3", "fg3p", "fg3m", "fg3a"); pr("אחוז עונשין", "ftp", "ftm", "fta");
   for (const k of ["reb","oreb","dreb","ast","stl","blk","tov","pf"]) if (sides.every(x => isN(x.T[k]))) R.push({ l: SL[k].l, v: sides.map(x => x.T[k]), low: k === "tov" || k === "pf" });
   if (!R.length) return "";
-  return `<section class="sec"><div class="sec-h"><h2>השוואת קבוצות</h2><span class="small muted">${esc(H.name)} מול ${esc(A.name)}</span></div><div class="card pad cmp">
+  return `<section class="sec"><div class="sec-h"><h2>השוואת קבוצות</h2><span class="small muted">${esc(tn(H))} מול ${esc(tn(A))}</span></div><div class="card pad cmp">
     ${R.map(r => { const [h, a] = r.v, tot = (h + a) || 1, best = r.low ? (h < a ? 0 : h > a ? 1 : -1) : (h > a ? 0 : h < a ? 1 : -1);
       const show = (i) => r.pct ? `${fp(r.v[i])}<small>${r.sub[i]}</small>` : r.v[i];
       return `<div class="cmp-l">${r.l}</div><div class="cmp-row"><span class="cv ${best === 0 ? "best" : ""}">${show(0)}</span>
@@ -1506,7 +1525,7 @@ function playerCols(withTeam) {
     { k:"num", l:"#", fmt:x => `<span class="dim">${esc(x.p.number ?? "")}</span>`, val:x => +x.p.number || 999 },
     { k:"name", l:"שחקן", cls:"l sticky-col", fmt:x => `${plink(x.p)}${x.a.manual ? ` <span class="badge">ידני</span>` : ""}`, val:x => x.p.name },
   ];
-  if (withTeam) c.push({ k:"team", l:"קבוצה", cls:"l", fmt:x => badge(team(x.p.teamId)), val:x => team(x.p.teamId)?.name || "" });
+  if (withTeam) c.push({ k:"team", l:"קבוצה", cls:"l", fmt:x => badge(team(x.p.teamId)), val:x => tn(team(x.p.teamId)) || "" });
   c.push(
     { k:"gp", l:"מש'", fmt:x => x.a.gp, val:x => x.a.gp },
     { k:"rate", l:"ציון", title:"ציון ממוצע למשחק (1-10)", fmt:x => isN(x.a.avg.rate) ? rtBadge(Math.round(x.a.avg.rate * 10) / 10) : "—", val:x => x.a.avg.rate },
@@ -1536,7 +1555,7 @@ function baseCols() {
   return [
     { k:"num", l:"#", fmt:x => `<span class="dim">${esc(x.p.number ?? "")}</span>`, val:x => +x.p.number || 999 },
     { k:"name", l:"שחקן", cls:"l sticky-col", fmt:x => plink(x.p), val:x => x.p.name },
-    { k:"team", l:"קבוצה", cls:"l", fmt:x => badge(team(x.p.teamId)), val:x => team(x.p.teamId)?.name || "" },
+    { k:"team", l:"קבוצה", cls:"l", fmt:x => badge(team(x.p.teamId)), val:x => tn(team(x.p.teamId)) || "" },
     { k:"gp", l:"מש'", fmt:x => x.a.gp, val:x => x.a.gp },
   ];
 }
@@ -1607,7 +1626,7 @@ function pageTeam(id) {
   return `
   <div class="hero" style="border-color:${esc(t.color)}55">
     <div class="split"><div style="display:flex;gap:14px;align-items:center">${badge(t, { lg:true, noName:true, link:false })}
-      <div><h1 style="margin:0">${esc(t.name)}</h1><div class="muted">מקום ${s.rank} · ${s.w}-${s.l} · ${s.lp} נק'</div></div></div>
+      <div><h1 style="margin:0">${esc(tn(t))}</h1><div class="muted">מקום ${s.rank} · ${s.w}-${s.l} · ${s.lp} נק'</div></div></div>
       ${formDots(s.last5)}</div>
     <div class="kpis">
       <div class="kpi"><b>${f1(s.ppg)}</b><span>נק' זכות למשחק</span></div>
@@ -1653,7 +1672,7 @@ function pagePlayer(id) {
   const HL = [["pts","נקודות"],["reb","ריבאונדים"],["ast","אסיסטים"],["stl","חטיפות"],["blk","חסימות"],["fg3m","קליעות 3"],["eff","יעילות"]].filter(([k]) => a.high[k]);
   const highsHtml = HL.length ? `<div class="grid g4">${HL.map(([k, l]) => {
     const h = a.high[k], opp = team(h.g.homeId === p.teamId ? h.g.awayId : h.g.homeId);
-    return `<a class="card tile" href="#/game/${h.g.id}"><span>${l}</span><b>${h.v}</b><small>נגד ${esc(opp?.name || "—")} · ${esc(fmtDM(h.g.date))}</small></a>`; }).join("")}</div>` : "";
+    return `<a class="card tile" href="#/game/${h.g.id}"><span>${l}</span><b>${h.v}</b><small>נגד ${esc(tn(opp) || "—")} · ${esc(fmtDM(h.g.date))}</small></a>`; }).join("")}</div>` : "";
   // 5 אחרונים מול העונה
   let formHtml = "";
   if (log.length >= 6) {
@@ -1686,7 +1705,7 @@ function pagePlayer(id) {
       const home = g.homeId === p.teamId, opp = team(home ? g.awayId : g.homeId);
       const my = home ? g.homeScore : g.awayScore, ot = home ? g.awayScore : g.homeScore;
       const res = isFinal(g) ? `<a href="#/game/${g.id}" class="${my > ot ? "pos" : "neg"}">${my > ot ? "נ" : "ה"} ${my}-${ot}</a>` : `<a href="#/game/${g.id}">—</a>`;
-      return `<tr class="clickrow" data-act="pgame" data-g="${g.id}" data-p="${p.id}"><td class="l">${fmtDate(g.date, false)}</td><td class="l">${home ? "" : "@ "}${opp ? esc(opp.name) : "—"}</td><td>${res.replace(/<a href="[^"]*"/, "<span").replace("</a>", "</span>")}</td>${lcols.map(c => `<td>${c[1](r)}</td>`).join("")}</tr>`;
+      return `<tr class="clickrow" data-act="pgame" data-g="${g.id}" data-p="${p.id}"><td class="l">${fmtDate(g.date, false)}</td><td class="l">${home ? "" : "@ "}${opp ? esc(tn(opp)) : "—"}</td><td>${res.replace(/<a href="[^"]*"/, "<span").replace("</a>", "</span>")}</td>${lcols.map(c => `<td>${c[1](r)}</td>`).join("")}</tr>`;
     }).join("")}</tbody></table></div>` : `<div class="card pad muted">${a.manual ? "הממוצעים של השחקן הוזנו ידנית, בלי פירוט משחקים." : "עוד אין משחקים עם נתונים לשחקן הזה."}</div>`;
   return `
   <div class="hero" style="${t ? `border-color:${esc(t.color)}55` : ""}">
@@ -1718,7 +1737,7 @@ function pagePlayers(q) {
   const row = (p, showTeam = true) => { const a = playerAgg(p.id), t = team(p.teamId);
     return `<a class="pl-row ${p.teamId === mid ? "mine" : ""}" href="#/player/${p.id}">
       <span class="jn" style="${t ? `box-shadow:inset 0 -3px 0 ${esc(t.color)}` : ""}">${esc(p.number ?? "")}</span>
-      <span class="who"><b>${esc(p.name)}</b>${showTeam ? `<small>${esc(t?.name || "")}</small>` : ""}</span>
+      <span class="who"><b>${esc(p.name)}</b>${showTeam ? `<small>${esc(tn(t) || "")}</small>` : ""}</span>
       <span class="pl-nums">${isN(a.avg.pts) ? `<span><b>${f1(a.avg.pts)}</b><small>נק'</small></span>` : ""}${isN(a.avg.rate) ? `<span>${rtBadge(Math.round(a.avg.rate * 10) / 10)}<small>ציון</small></span>` : ""}</span>
       <span class="dim">‹</span></a>`; };
   const teamsOrder = [...DB.teams].sort((x, y) => (y.id === mid) - (x.id === mid) || x.name.localeCompare(y.name, "he"));
@@ -1729,7 +1748,7 @@ function pagePlayers(q) {
   return `<h1>שחקנים</h1>
   <div class="toolbar">
     <label class="search" style="flex:1;min-width:180px">${I.search}<input class="inp" placeholder="חיפוש שחקן או מספר…" value="${esc(s)}" data-act="psearch"></label>
-    <select class="inp" style="max-width:220px" data-act="pfilter"><option value="">כל הקבוצות</option>${DB.teams.map(t => `<option value="${t.id}" ${t.id === tf ? "selected" : ""}>${t.id === mid ? "" : ""}${esc(t.name)}</option>`).join("")}</select>
+    <select class="inp" style="max-width:220px" data-act="pfilter"><option value="">כל הקבוצות</option>${DB.teams.map(t => `<option value="${t.id}" ${t.id === tf ? "selected" : ""}>${t.id === mid ? "" : ""}${esc(tn(t))}</option>`).join("")}</select>
   </div>
   ${body}
   <p class="small muted" style="margin-top:8px">לחץ על שחקן לכל הנתונים שלו. הטבלאות והדירוגים – בלשונית <a href="#/leaders"><b>מובילים</b></a>.</p>`;
@@ -1742,10 +1761,10 @@ function pageLeaders(q) {
     return `<li><span class="jn" style="${t ? `box-shadow:inset 0 -3px 0 ${esc(t.color)}` : ""}">${esc(x.p.number ?? "")}</span><span class="who"><b>${plink(x.p)}</b><small>${sub}</small></span><span class="v">${v}</span></li>`; };
   const hiCard = (k, l, fmt = (v) => v) => { const xs = gameHighs(k, 10, ids); if (!xs.length) return "";
     return `<div class="card pad ld"><h3><span>${l} במשחק אחד</span></h3><ol>${xs.map(x => { const t = team(x.p.teamId), opp = team(x.g.homeId === x.p.teamId ? x.g.awayId : x.g.homeId);
-      return li(x, fmt(x.v), `<a href="#/game/${x.g.id}">${esc(t?.name || "")} · נגד ${esc(opp?.name || "—")}</a>`); }).join("")}</ol></div>`; };
+      return li(x, fmt(x.v), `<a href="#/game/${x.g.id}">${esc(tn(t) || "")} · נגד ${esc(tn(opp) || "—")}</a>`); }).join("")}</ol></div>`; };
   const C = (k) => LEADER_CATS.find(c => c.k === k);
   const rTop = leaders(C("rate"), minG, rows, 10);
-  const rateBig = rTop.length ? `<div class="card pad ld ld-click rate-top" data-act="ldAll" data-k="rate" data-scope="league" data-min="${minG}" role="button"><h3><span>טופ 10 בליגה – ציון ממוצע (1-10)</span><small class="ld-more">כולם ←</small></h3><ol>${rTop.map((x, i) => li(x, rtBadge(Math.round(x.v * 10) / 10), `<span class="rk ${i < 3 ? "top" : ""}">#${i + 1}</span> ${esc(team(x.p.teamId)?.name || "")} · ${x.a.n.rate} מש'`)).join("")}</ol></div>` : "";
+  const rateBig = rTop.length ? `<div class="card pad ld ld-click rate-top" data-act="ldAll" data-k="rate" data-scope="league" data-min="${minG}" role="button"><h3><span>טופ 10 בליגה – ציון ממוצע (1-10)</span><small class="ld-more">כולם ←</small></h3><ol>${rTop.map((x, i) => li(x, rtBadge(Math.round(x.v * 10) / 10), `<span class="rk ${i < 3 ? "top" : ""}">#${i + 1}</span> ${esc(tn(team(x.p.teamId)) || "")} · ${x.a.n.rate} מש'`)).join("")}</ol></div>` : "";
   const cards = (ks) => ks.map(k => C(k) && leaderCard(C(k), minG, 10, rows, "league")).filter(Boolean).join("");
   const sec = (title, inner, sub = "") => inner ? `<section class="sec"><div class="sec-h"><h2>${title}</h2>${sub ? `<span class="small muted">${sub}</span>` : ""}</div>${inner}</section>` : "";
   return `<h1>מובילי הליגה</h1>
@@ -1796,7 +1815,7 @@ function pageMyTeam() {
     <div class="rt-hero"><span class="rt big ${rtCls(teamAvgRate)}">${f1(teamAvgRate)}</span><div><b>ציון ממוצע של הקבוצה</b><div class="small muted">ממוצע הציונים של השחקנים, ב-${rated.length} משחקים</div></div></div>
     <div class="mini-h">ציון הקבוצה בכל משחק</div>
     <div class="tbl-wrap"><table><thead><tr><th class="l">יריבה</th><th>תוצאה</th><th>ציון קבוצה</th><th class="l">הכי טוב במשחק</th></tr></thead><tbody>
-      ${rated.slice().reverse().map(x => `<tr class="clickrow" onclick="location.hash='#/game/${x.g.id}'"><td class="l">${x.home ? "" : "@ "}${esc(x.opp?.name || "—")}</td><td class="${x.m > 0 ? "pos" : "neg"}">${x.m > 0 ? "נ" : "ה"} ${x.f}-${x.a}</td><td>${rtBadge(x.tr)}</td><td class="l">${x.top ? `${esc(x.top.p.name)} ${rtBadge(x.top.v)}` : "—"}</td></tr>`).join("")}</tbody></table></div>
+      ${rated.slice().reverse().map(x => `<tr class="clickrow" onclick="location.hash='#/game/${x.g.id}'"><td class="l">${x.home ? "" : "@ "}${esc(tn(x.opp) || "—")}</td><td class="${x.m > 0 ? "pos" : "neg"}">${x.m > 0 ? "נ" : "ה"} ${x.f}-${x.a}</td><td>${rtBadge(x.tr)}</td><td class="l">${x.top ? `${esc(x.top.p.name)} ${rtBadge(x.top.v)}` : "—"}</td></tr>`).join("")}</tbody></table></div>
     ${plRated.length ? `<div class="mini-h">ציון ממוצע לכל שחקן</div><div class="share">${plRated.map(x => `<a class="share-row" href="#/player/${x.p.id}">
       <span class="share-n"><span class="dim">${esc(x.p.number ?? "")}</span> ${esc(x.p.name)}</span>
       <span class="share-bar"><i style="width:${(x.a.avg.rate * 10).toFixed(1)}%"></i></span>
@@ -1816,10 +1835,10 @@ function pageMyTeam() {
       ${statTile("הפרש ממוצע", S.gp ? (S.diff / S.gp > 0 ? "+" : "") + f1(S.diff / S.gp) : "—", `סה"כ ${S.diff > 0 ? "+" : ""}${S.diff}`, "", S.diff > 0 ? "pos" : S.diff < 0 ? "neg" : "")}
       ${statTile("רצף נוכחי", S.streak, S.streakW ? "ניצחונות ברצף" : S.streak !== "—" ? "הפסדים ברצף" : "", "", S.streakW ? "pos" : "neg")}
       ${statTile("בבית / בחוץ", `${S.hw}-${S.hl} · ${S.aw}-${S.al}`, "ניצחונות-הפסדים")}
-      ${bw ? statTile("הניצחון הכי גדול", "+" + bw.m, `${bw.f}-${bw.a} נגד ${esc(bw.opp?.name || "")}`, `#/game/${bw.g.id}`, "pos") : ""}
-      ${bl ? statTile("ההפסד הכי גדול", bl.m, `${bl.f}-${bl.a} נגד ${esc(bl.opp?.name || "")}`, `#/game/${bl.g.id}`, "neg") : ""}
-      ${closest ? statTile("ההפסד הכי צמוד", closest.m, `${closest.f}-${closest.a} נגד ${esc(closest.opp?.name || "")}`, `#/game/${closest.g.id}`) : ""}
-      ${hs ? statTile("שיא נקודות במשחק", hs.f, `נגד ${esc(hs.opp?.name || "")} · ${esc(fmtDM(hs.g.date))}`, `#/game/${hs.g.id}`) : ""}
+      ${bw ? statTile("הניצחון הכי גדול", "+" + bw.m, `${bw.f}-${bw.a} נגד ${esc(tn(bw.opp) || "")}`, `#/game/${bw.g.id}`, "pos") : ""}
+      ${bl ? statTile("ההפסד הכי גדול", bl.m, `${bl.f}-${bl.a} נגד ${esc(tn(bl.opp) || "")}`, `#/game/${bl.g.id}`, "neg") : ""}
+      ${closest ? statTile("ההפסד הכי צמוד", closest.m, `${closest.f}-${closest.a} נגד ${esc(tn(closest.opp) || "")}`, `#/game/${closest.g.id}`) : ""}
+      ${hs ? statTile("שיא נקודות במשחק", hs.f, `נגד ${esc(tn(hs.opp) || "")} · ${esc(fmtDM(hs.g.date))}`, `#/game/${hs.g.id}`) : ""}
       ${wins.length ? statTile("נקודות בניצחון", f1(avg(wins, "f")), `ספגנו ${f1(avg(wins, "a"))}`) : ""}
       ${losses.length ? statTile("נקודות בהפסד", f1(avg(losses, "f")), `ספגנו ${f1(avg(losses, "a"))}`) : ""}
     </div>
@@ -1853,7 +1872,7 @@ function pageMyTeam() {
   const ids = new Set(ros.map(p => p.id));
   const th = HIGH_CATS.map(([k, l]) => { const xs = gameHighs(k, 3, ids); if (!xs.length) return "";
     return `<div class="card pad ld"><h3><span>${l} במשחק אחד</span></h3><ol>${xs.map(x => { const opp = team(x.g.homeId === mid ? x.g.awayId : x.g.homeId);
-      return `<li><span class="jn">${esc(x.p.number ?? "")}</span><span class="who"><b>${plink(x.p)}</b><small><a href="#/game/${x.g.id}">נגד ${esc(opp?.name || "—")} · ${esc(fmtDM(x.g.date))}</a></small></span><span class="v">${x.v}</span></li>`; }).join("")}</ol></div>`; }).join("");
+      return `<li><span class="jn">${esc(x.p.number ?? "")}</span><span class="who"><b>${plink(x.p)}</b><small><a href="#/game/${x.g.id}">נגד ${esc(tn(opp) || "—")} · ${esc(fmtDM(x.g.date))}</a></small></span><span class="v">${x.v}</span></li>`; }).join("")}</ol></div>`; }).join("");
 
   // ---- ממוצעים ואחוזים של הקבוצה ----
   const avgHtml = teamAvgHtml(mid, S);
@@ -1872,7 +1891,7 @@ function pageMyTeam() {
   return `${pickTeam}
   <div class="hero my-hero" style="--tc:${esc(T?.color || "#ff7a1a")}">
     <div class="my-head">${T ? badge(T, { lg:true, noName:true, link:false }) : ""}
-      <div style="flex:1;min-width:0"><div class="small muted">הקבוצה שלי</div><h1 style="margin:0">${esc(T?.name || "")}</h1>
+      <div style="flex:1;min-width:0"><div class="small muted">הקבוצה שלי</div><h1 style="margin:0">${esc(tn(T) || "")}</h1>
       ${S ? `<div class="muted">מקום ${S.rank} מתוך ${st.length} · ${S.w}-${S.l} · ${S.lp} נק' בטבלה</div>` : ""}</div>
       ${S ? formDots(S.last5) : ""}</div>
   </div>
@@ -1899,14 +1918,14 @@ function ptsLeagueTable(rowsIn) {
   const ppgCols = [
     { k:"rk", l:"#", cls:"rk", fmt:(x, i) => `<span class="rk ${i < 3 ? "top" : ""}">${i + 1}</span>` },
     { k:"name", l:"שחקן", cls:"l sticky-col", fmt:x => `<span class="dim">${esc(x.p.number ?? "")}</span> ${plink(x.p)}`, val:x => x.p.name },
-    { k:"team", l:"קבוצה", cls:"l", fmt:x => badge(team(x.p.teamId)), val:x => team(x.p.teamId)?.name || "" },
+    { k:"team", l:"קבוצה", cls:"l", fmt:x => badge(team(x.p.teamId)), val:x => tn(team(x.p.teamId)) || "" },
     { k:"gp", l:"מש'", fmt:x => x.a.n.pts, val:x => x.a.n.pts },
     { k:"ppg", l:"נק' למשחק", fmt:x => `<b>${f1(x.a.avg.pts)}</b>`, val:x => x.a.avg.pts },
     { k:"tot", l:"סה\"כ", fmt:x => x.a.tot.pts, val:x => x.a.tot.pts },
     { k:"hi", l:"שיא", fmt:x => x.a.high.pts?.v ?? "—", val:x => x.a.high.pts?.v },
   ];
   const ppgHtml = all.length ? sTable("lg-ppg", ppgCols, all, "ppg", -1, { rowCls: x => x.p.teamId === mid ? "mine" : "" }) +
-    `<p class="small dim" style="margin:8px 0 0">השורות המודגשות – השחקנים של ${esc(T?.name || "הקבוצה שלך")}.</p>` : "";
+    `<p class="small dim" style="margin:8px 0 0">השורות המודגשות – השחקנים של ${esc(tn(T) || "הקבוצה שלך")}.</p>` : "";
 
   return ppgHtml;
 }
@@ -1917,7 +1936,7 @@ function teamsStatsTable() {
     return { ...s, hi: r.length ? Math.max(...r.map(x => x.f)) : undefined, lo: r.length ? Math.min(...r.map(x => x.f)) : undefined,
       bigW: wsm.length ? Math.max(...wsm.map(x => x.m)) : undefined, avgM: s.gp ? s.diff / s.gp : undefined }; });
   const tcols = [
-    { k:"team", l:"קבוצה", cls:"l sticky-col", fmt:r => badge(r.t), val:r => r.t.name },
+    { k:"team", l:"קבוצה", cls:"l sticky-col", fmt:r => badge(r.t), val:r => tn(r.t) },
     { k:"gp", l:"מש'", fmt:r => r.gp, val:r => r.gp },
     { k:"pct", l:"% נצ'", fmt:r => r.gp ? (r.pct * 100).toFixed(0) : "—", val:r => r.gp ? r.pct : undefined },
     { k:"ppg", l:"זכות", title:"נקודות זכות למשחק", fmt:r => `<b>${f1(r.ppg)}</b>`, val:r => r.ppg },
@@ -1947,17 +1966,17 @@ function leagueStatsTiles() {
     const off = best(st.filter(s => s.gp), s => s.ppg), def = best(st.filter(s => s.gp), s => -s.oppg);
     const king = best(all, x => x.a.avg.pts), one = gameHighs("pts", 1)[0];
     const hiTeam = best(fin.flatMap(g => [{ g, t: team(g.homeId), v: g.homeScore }, { g, t: team(g.awayId), v: g.awayScore }]), x => x.v);
-    const gname = (g) => `${esc(team(g.homeId)?.name || "")} ${g.homeScore}-${g.awayScore} ${esc(team(g.awayId)?.name || "")}`;
+    const gname = (g) => `${esc(tn(team(g.homeId)) || "")} ${g.homeScore}-${g.awayScore} ${esc(tn(team(g.awayId)) || "")}`;
     leagueHtml = `<div class="grid g4">
       ${statTile("משחקים ששוחקו", fin.length, `מתוך ${DB.games.length}`)}
       ${statTile("סה\"כ נקודות", tot, `${f1(tot / fin.length)} למשחק`)}
       ${statTile("ממוצע לקבוצה", f1(tot / fin.length / 2), "נקודות במשחק")}
       ${statTile("ניצחונות בית", (homeW / fin.length * 100).toFixed(0) + "%", `${homeW} מתוך ${fin.length}`)}
-      ${king ? statTile("מלך הסלים", f1(king.a.avg.pts), `${esc(king.p.name)} · ${esc(team(king.p.teamId)?.name || "")}`, `#/player/${king.p.id}`) : ""}
+      ${king ? statTile("מלך הסלים", f1(king.a.avg.pts), `${esc(king.p.name)} · ${esc(tn(team(king.p.teamId)) || "")}`, `#/player/${king.p.id}`) : ""}
       ${one ? statTile("שיא אישי במשחק", one.v + " נק'", `${esc(one.p.name)} · ${esc(fmtDM(one.g.date))}`, `#/game/${one.g.id}`) : ""}
-      ${off ? statTile("ההתקפה הכי טובה", f1(off.ppg), esc(off.t.name), `#/team/${off.t.id}`) : ""}
-      ${def ? statTile("ההגנה הכי טובה", f1(def.oppg), `${esc(def.t.name)} – ספיגה למשחק`, `#/team/${def.t.id}`) : ""}
-      ${hiTeam ? statTile("שיא קבוצתי במשחק", hiTeam.v, `${esc(hiTeam.t?.name || "")} · ${esc(fmtDM(hiTeam.g.date))}`, `#/game/${hiTeam.g.id}`) : ""}
+      ${off ? statTile("ההתקפה הכי טובה", f1(off.ppg), esc(tn(off.t)), `#/team/${off.t.id}`) : ""}
+      ${def ? statTile("ההגנה הכי טובה", f1(def.oppg), `${esc(tn(def.t))} – ספיגה למשחק`, `#/team/${def.t.id}`) : ""}
+      ${hiTeam ? statTile("שיא קבוצתי במשחק", hiTeam.v, `${esc(tn(hiTeam.t) || "")} · ${esc(fmtDM(hiTeam.g.date))}`, `#/game/${hiTeam.g.id}`) : ""}
       ${hiG ? statTile("המשחק עם הכי הרבה נקודות", hiG.homeScore + hiG.awayScore, gname(hiG), `#/game/${hiG.id}`) : ""}
       ${blow ? statTile("ההפרש הכי גדול", Math.abs(blow.homeScore - blow.awayScore), gname(blow), `#/game/${blow.id}`) : ""}
       ${close ? statTile("המשחק הכי צמוד", Math.abs(close.homeScore - close.awayScore), gname(close), `#/game/${close.id}`) : ""}
